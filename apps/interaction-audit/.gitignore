@@ -1,5 +1,6 @@
 # NEVER commit real customer data — only the built, redacted index.html is shareable.
 raw/
+slack_cache/
 data.json
 data.*.json
 !data.test.json

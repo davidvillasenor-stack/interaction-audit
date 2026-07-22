@@ -85,7 +85,7 @@ def _dur(sec):
 def _sentences(text):
     return [s.strip() for s in re.split(r"(?<=[.!?\n])\s+", text or "") if s.strip()]
 
-def scan_misstatements(raw):
+def scan_misstatements(raw, win_start=None, win_end=None):
     prod = (raw.get("experience", {}).get("product") or "").lower()
     of = raw.get("offer_fee") or {}
     svc = of.get("service_pct")  # this offer's actual service fee %, or None
@@ -98,6 +98,10 @@ def scan_misstatements(raw):
              + [("text", t) for t in raw.get("texts", [])]
              + [("email", e) for e in raw.get("emails", [])])
     for kind, it in items:
+        if win_start and win_end:
+            dt = _parse(it.get("when"))
+            if dt is None or not (win_start <= dt <= win_end):
+                continue
         text = it.get("transcript") if kind == "call" else (it.get("body") if kind == "email" else it.get("content"))
         if not text:
             continue
@@ -145,26 +149,30 @@ def scan_misstatements(raw):
     return out
 
 # ── gap / miss detection ──────────────────────────────────────────────────────
-def detect_gaps(raw, comms):
+def detect_gaps(raw, comms, win_start, win_end):
+    """Gaps within the analysis window only. Open gaps are capped at win_end (never 'now'),
+    so a long-closed deal doesn't produce a multi-year phantom gap."""
     m = raw.get("milestones", {})
     pa = _parse(m.get("pa_completed"))
     dv = _parse(m.get("diligence_completed"))
     gaps = []
-    # offer-ready -> first human outbound
+    # offer-ready -> first human outbound (only if the offer-ready is inside the window)
     offer_ready = _parse(m.get("uw_completed")) or _parse(m.get("last_offer_sent"))
     first_out = next((c for c in comms if c["_dir"] == "out_human"), None)
-    if offer_ready and first_out:
+    if offer_ready and first_out and win_start and offer_ready >= win_start and first_out["_dt"] >= offer_ready:
         hrs = (first_out["_dt"] - offer_ready).total_seconds() / 3600
         if hrs > 24:
             gaps.append({"sev": "mild", "days": round(hrs / 24, 1), "owner": "HSA",
                          "where": "Pre-contact — offer ready → first outreach",
                          "text": f"Offer ready {_fmt(offer_ready)} → first human outreach {_fmt(first_out['_dt'])} (SLA 24h)."})
-    # inbound customer -> next human outbound
+    # inbound customer -> next human outbound (open gap capped at win_end)
     for i, c in enumerate(comms):
         if c["_dir"] != "in":
             continue
         nxt = next((x for x in comms[i + 1:] if x["_dir"] == "out_human"), None)
-        end = nxt["_dt"] if nxt else datetime.now(c["_dt"].tzinfo)
+        end = nxt["_dt"] if nxt else win_end
+        if not end or end < c["_dt"]:
+            continue
         hrs = (end - c["_dt"]).total_seconds() / 3600
         if hrs > 48:
             if pa and c["_dt"] > pa:
@@ -174,14 +182,15 @@ def detect_gaps(raw, comms):
             else:
                 owner, where = "HSA", "Owed a response to an inbound customer message"
             gaps.append({"sev": "", "days": round(hrs / 24, 1), "owner": owner, "where": where,
-                         "text": f"Customer reached out {_fmt(c['_dt'])}; next human response {('at ' + _fmt(nxt['_dt'])) if nxt else 'never logged'} ({round(hrs/24,1)}d)."})
-    # expected close passed, not closed
+                         "text": f"Customer reached out {_fmt(c['_dt'])}; next human response {('at ' + _fmt(nxt['_dt'])) if nxt else 'not within this window'} ({round(hrs/24,1)}d)."})
+    # expected close passed, not closed — only if expected close falls inside the window
     exp, close = _parse(m.get("expected_close")), _parse(m.get("acq_close"))
-    if exp and not close and exp < datetime.now(exp.tzinfo):
-        d = round((datetime.now(exp.tzinfo) - exp).total_seconds() / 86400, 1)
-        gaps.append({"sev": "", "days": d, "owner": "Title / TC",
-                     "where": "Post-contract — past expected close, not closed",
-                     "text": f"Expected close {_fmt(exp)} has passed with no acquisition close on record."})
+    if exp and not close and win_start and win_start <= exp <= win_end:
+        d = round((win_end - exp).total_seconds() / 86400, 1)
+        if d > 0:
+            gaps.append({"sev": "", "days": d, "owner": "Title / TC",
+                         "where": "Post-contract — past expected close, not closed",
+                         "text": f"Expected close {_fmt(exp)} has passed with no acquisition close on record."})
     return gaps
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -229,15 +238,34 @@ def analyze(raw):
         comms.append({"_dt": dt, "_kind": "email", "_dir": "in" if "in" in d else "out_human", "raw": e})
     comms.sort(key=lambda x: x["_dt"])
 
-    gaps = detect_gaps(raw, comms)
-    mis = scan_misstatements(raw)
+    # ── analysis window: last ~6 months of interactions; if nothing recent, anchor on the
+    # most recent activity and look back 6 months from there. Avoids multi-year phantom gaps.
+    WIN_DAYS = 180
+    now_ref = datetime.now(timezone.utc)
+    if comms:
+        recent = [c for c in comms if (now_ref - c["_dt"]).days <= WIN_DAYS]
+        if recent:
+            win_end, win_start = now_ref, now_ref - timedelta(days=WIN_DAYS)
+        else:
+            last_act = max(c["_dt"] for c in comms)
+            win_end, win_start = last_act, last_act - timedelta(days=WIN_DAYS)
+        comms = [c for c in comms if win_start <= c["_dt"] <= win_end]
+    else:
+        win_end, win_start = now_ref, now_ref - timedelta(days=WIN_DAYS)
+
+    def _inwin(dtstr):
+        dt = _parse(dtstr)
+        return dt is not None and win_start <= dt <= win_end
+
+    gaps = detect_gaps(raw, comms, win_start, win_end)
+    mis = scan_misstatements(raw, win_start, win_end)
 
     # events (timeline): milestones + comms + tasks
     events = []
     m = raw.get("milestones", {})
     def mile(dtstr, tag, who, body):
         dt = _parse(dtstr)
-        if dt:
+        if dt and win_start <= dt <= win_end:
             events.append({"_dt": dt, "type": "milestone", "tag": tag, "who": who, "when": _fmt(dt), "body": body})
     mile(m.get("last_offer_sent"), "Offer sent", "Final offer sent", f"{product} offer sent.")
     mile(m.get("pa_completed"), "Contract", "Purchase agreement signed", "PA completed.")
@@ -249,7 +277,7 @@ def analyze(raw):
              "Walked / withdrawn", f"Walk reason: {m.get('walk_reason') or 'n/a'}.")
     for t in raw.get("tasks", []):
         dt = _parse(t.get("when"))
-        if dt:
+        if dt and win_start <= dt <= win_end:
             events.append({"_dt": dt, "type": "task", "who": f"{(t.get('type') or 'task').replace('_',' ').title()} — task", "when": _fmt(dt), "body": f"OpsHub/CASEY task_type: {t.get('type')}."})
     for c in comms:
         r = c["raw"]
@@ -274,11 +302,11 @@ def analyze(raw):
     for e in events:
         e.pop("_dt", None)
 
-    # counts + metrics for summary
-    n_call = len(raw.get("calls", []))
-    n_text = len(raw.get("texts", []))
-    n_email = len(raw.get("emails", []))
-    n_task = len(raw.get("tasks", []))
+    # counts + metrics for summary (windowed)
+    n_call = sum(1 for c in comms if c["_kind"] == "call")
+    n_text = sum(1 for c in comms if c["_kind"] == "text")
+    n_email = sum(1 for c in comms if c["_kind"] == "email")
+    n_task = sum(1 for t in raw.get("tasks", []) if _inwin(t.get("when")))
     wait = round(sum(g.get("days", 0) for g in gaps), 1)
     hsa = exp.get("hsa") or (_name_from_email(raw["calls"][0]["hsa_email"]) if raw.get("calls") else "—")
     summary = (f"<b>{product}{' · CNML '+cnml if cnml!='—' else ''}</b> via <b>{channel}</b>, HSA <b>{hsa}</b>. "
@@ -287,7 +315,8 @@ def analyze(raw):
                   if gaps else "<b>No response gaps over 48h.</b> ")
                + (f"<b>{len(mis)} accuracy flag(s)</b> on what we told the customer. " if mis else "")
                + (f"This offer's service fee: <b>{fee_disp}</b>. " if fee_disp != "—" else "")
-               + f"Current status: <b>{state}</b>. <i>(v0 heuristics — LLM summary/accuracy upgrade later.)</i>")
+               + f"Current status: <b>{state}</b>. "
+               + f"<i>(Window: {_fmt(win_start)} – {_fmt(win_end)}, last ~6 months of activity.)</i>")
 
     return {
         "customer": raw.get("customer", "Customer"),

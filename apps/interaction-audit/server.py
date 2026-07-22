@@ -8,6 +8,7 @@ Run (on VPN; first query opens an Okta browser login):
     python3 -m uvicorn apps.interaction-audit.server:app --port 8799 --reload
     # then open http://localhost:8799   (or expose via a tunnel for a shareable link)
 """
+import json
 import sys
 from pathlib import Path
 
@@ -52,6 +53,14 @@ def audit(q: str, refresh: bool = False):
     if result.get("error"):
         return JSONResponse(result, status_code=404)
     result["flip_token"] = flip
+    # Slack mentions: served from a per-flip cache (populated via the Slack connector),
+    # since the backend has no Slack token. Falls back to the UI's deep-link search.
+    sc = HERE / "slack_cache" / f"{flip}.json"
+    if sc.exists():
+        try:
+            result["slack"] = json.loads(sc.read_text())
+        except Exception:  # noqa: BLE001
+            pass
     _CACHE[flip] = result
     return result
 
