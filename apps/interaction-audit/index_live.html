@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Customer Interaction Audit</title>
+<style>
+  :root{
+    --ink:#0b1020; --muted:#6b7280; --faint:#9aa2b1; --line:#eaecf2;
+    --accent:#5b5bf5; --accent2:#8b5cf6; --accent-soft:#eef0ff;
+    --good:#059669; --good-soft:#ecfdf5; --warn:#e11d48; --warn-soft:#fff1f3;
+    --amber:#d97706; --amber-soft:#fffbeb; --sky:#0284c7; --sky-soft:#e0f2fe;
+    --violet:#7c3aed; --violet-soft:#f3e8ff; --slack:#611f69; --slack-soft:#f7edf7;
+    --card:#ffffff;
+    --shadow:0 30px 60px -22px rgba(30,27,75,.45);
+    --shadow-sm:0 12px 30px -16px rgba(30,27,75,.35);
+    --radius:22px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    color:var(--ink); min-height:100vh; padding:34px 18px 60px; -webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(900px 500px at 12% -8%, rgba(139,92,246,.55), transparent 60%),
+      radial-gradient(800px 500px at 100% 0%, rgba(236,72,153,.42), transparent 55%),
+      radial-gradient(700px 600px at 50% 120%, rgba(56,189,248,.30), transparent 60%),
+      linear-gradient(160deg,#4338ca 0%,#6d28d9 45%,#9333ea 100%);
+    background-attachment:fixed;
+  }
+  .wrap{width:100%; max-width:980px; margin:0 auto}
+
+  .demo-banner{
+    background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.30); color:#fff;
+    border-radius:12px; padding:9px 16px; font-size:12.5px; font-weight:500; text-align:center;
+    margin-bottom:22px; backdrop-filter:blur(8px);
+  }
+  .demo-banner b{font-weight:700}
+
+  .brand{color:#fff; text-align:center; margin-bottom:22px}
+  .brand h1{font-size:30px; font-weight:800; letter-spacing:-.03em}
+  .brand p{font-size:14px; opacity:.82; margin-top:5px; font-weight:400}
+
+  /* ---- hero search panel (frosted) ---- */
+  .hero{
+    background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.28); border-radius:var(--radius);
+    padding:20px; margin-bottom:22px; backdrop-filter:blur(14px); box-shadow:var(--shadow);
+  }
+  .field-row{display:flex; gap:12px; flex-wrap:wrap}
+  .field{flex:1; min-width:220px; position:relative}
+  .field .ic{position:absolute; left:15px; top:50%; transform:translateY(-50%); font-size:16px; opacity:.5}
+  .field input{
+    width:100%; border:none; border-radius:14px; padding:15px 16px 15px 42px; font-size:15px; font-family:inherit;
+    background:#fff; color:var(--ink); box-shadow:var(--shadow-sm); outline:none; font-weight:500;
+  }
+  .field input::placeholder{color:var(--faint); font-weight:400}
+  .field input:focus{box-shadow:0 0 0 4px rgba(255,255,255,.35), var(--shadow-sm)}
+  .btn{
+    border:none; border-radius:14px; padding:0 26px; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit;
+    background:linear-gradient(135deg,#111827,#312e81); color:#fff; transition:.15s; box-shadow:var(--shadow-sm);
+  }
+  .btn:hover{filter:brightness(1.15); transform:translateY(-1px)}
+  .hero-sub{display:flex; align-items:center; gap:10px; margin-top:14px; flex-wrap:wrap}
+  .hero-sub .lbl{color:#fff; opacity:.8; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.06em}
+  .demo-chip{background:rgba(255,255,255,.2); color:#fff; border:1px solid rgba(255,255,255,.34); border-radius:999px; padding:6px 13px; font-size:12.5px; font-weight:600; cursor:pointer; transition:.15s; font-family:inherit}
+  .demo-chip:hover, .demo-chip.on{background:#fff; color:var(--accent)}
+  .kw-chips{display:flex; gap:7px; flex-wrap:wrap; margin-top:12px}
+  .kw-chips .lbl{color:#fff; opacity:.8; font-size:12px; font-weight:600; align-self:center; margin-right:2px}
+  .kw{background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.26); border-radius:999px; padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; transition:.15s; font-family:inherit}
+  .kw:hover{background:rgba(255,255,255,.28)}
+  .search-status{color:#fff; font-size:12.5px; margin-top:12px; opacity:.92; font-weight:500; min-height:16px}
+  .search-status b{font-weight:800}
+
+  .card{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-bottom:20px; animation:rise .5s cubic-bezier(.2,.8,.2,1)}
+  @keyframes rise{from{opacity:0; transform:translateY(16px)}to{opacity:1; transform:none}}
+
+  /* header / experience */
+  .head{padding:26px 30px; background:linear-gradient(135deg,#4f46e5,#7c3aed 70%,#9333ea); color:#fff; position:relative; overflow:hidden}
+  .head::after{content:""; position:absolute; right:-40px; top:-40px; width:200px; height:200px; background:radial-gradient(circle,rgba(255,255,255,.16),transparent 70%)}
+  .head .name{font-size:22px; font-weight:800; letter-spacing:-.02em; position:relative}
+  .head .flip{font-size:12.5px; opacity:.82; margin-top:3px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; position:relative}
+  .chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; position:relative}
+  .chip{background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.28); border-radius:999px; padding:7px 14px; font-size:12.5px; font-weight:700}
+  .chip .k{opacity:.72; font-weight:500; margin-right:6px}
+  .chip.state-good{background:rgba(16,185,129,.34); border-color:rgba(16,185,129,.55)}
+  .chip.state-warn{background:rgba(244,63,94,.32); border-color:rgba(244,63,94,.55)}
+
+  .section{padding:24px 30px}
+  .section + .section{border-top:1px solid var(--line)}
+  .label{font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:14px; display:flex; align-items:center; gap:9px}
+  .label .count{background:var(--accent-soft); color:var(--accent); border-radius:999px; padding:2px 10px; font-size:11px; font-weight:800}
+
+  .summary{font-size:15px; line-height:1.65; color:#1f2637}
+  .summary b{color:#0b1020; font-weight:700}
+
+  .gap{display:flex; gap:12px; align-items:flex-start; background:var(--warn-soft); border:1px solid #fecdd3; border-radius:14px; padding:13px 16px; margin-bottom:10px}
+  .gap:last-child{margin-bottom:0}
+  .gap .ic{font-size:16px; line-height:1.5}
+  .gap .txt{font-size:13.5px; line-height:1.55; color:#9f1239}
+  .gap .txt b{color:#881337}
+  .gap.mild{background:var(--amber-soft); border-color:#fde68a}
+  .gap.mild .txt{color:#92400e}
+  .gap.mild .txt b{color:#b45309}
+  .gap.ok{background:var(--good-soft); border-color:#a7f3d0}
+  .gap.ok .txt{color:#065f46}
+  .gap .meta-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px; align-items:center}
+  .owner{font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 9px; border-radius:6px; background:rgba(255,255,255,.7); border:1px solid rgba(0,0,0,.06)}
+  .waitchip{font-size:10.5px; font-weight:800; padding:2px 9px; border-radius:6px; background:rgba(0,0,0,.06)}
+  .where{font-size:12.5px; font-weight:700; opacity:.9}
+
+  /* audit metrics */
+  .audit-metrics{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px}
+  .amx{flex:1; min-width:130px; border:1px solid var(--line); border-radius:14px; padding:13px 15px; background:#fbfbfe}
+  .amx .n{font-size:20px; font-weight:800; letter-spacing:-.02em; line-height:1}
+  .amx .n.warnv{color:var(--warn)} .amx .n.okv{color:var(--good)}
+  .amx .l{font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-top:5px}
+
+  /* misstatements */
+  .mis{background:var(--warn-soft); border:1px solid #fecdd3; border-radius:14px; padding:14px 16px; margin-bottom:11px}
+  .mis:last-child{margin-bottom:0}
+  .mis .mhd{display:flex; gap:9px; align-items:center; flex-wrap:wrap; margin-bottom:9px}
+  .mis .mwho{font-weight:800; font-size:13px; color:#9f1239}
+  .mis .mwhen{font-size:12px; color:#b45309; font-weight:600}
+  .mis .sev{font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 9px; border-radius:6px; margin-left:auto}
+  .mis .sev.high{background:#fee2e2; color:#b91c1c} .mis .sev.med{background:#fef3c7; color:#b45309}
+  .mis .said{font-size:13.5px; line-height:1.55; color:#7f1d1d; font-style:italic; border-left:3px solid #fca5a5; padding-left:12px; margin-bottom:10px}
+  .mis .line{font-size:13px; line-height:1.55; margin-top:4px; color:#374151}
+  .mis .line .k{font-weight:800}
+  .mis .line.bad .k{color:#b91c1c} .mis .line.good .k{color:#047857}
+  .mis .line.src{color:#475569; margin-top:8px; padding-top:8px; border-top:1px dashed #fecdd3}
+  .mis .line.src .k{color:#475569}
+  .factcat{font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); background:#eef2f7; padding:1px 7px; border-radius:5px; margin-left:7px; white-space:nowrap}
+
+  /* product facts reference */
+  .facts-note{font-size:12.5px; color:var(--muted); line-height:1.55; margin-bottom:16px}
+  .facts-note b{color:var(--ink)}
+  .factgroup{margin-bottom:16px} .factgroup:last-child{margin-bottom:0}
+  .factcat-h{font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); margin-bottom:6px}
+  .fact{display:flex; gap:11px; align-items:flex-start; font-size:13.5px; line-height:1.55; color:#374151; padding:9px 0; border-bottom:1px solid var(--line)}
+  .fact:last-child{border-bottom:none}
+  .fact .fdot{width:7px; height:7px; border-radius:50%; background:var(--accent); margin-top:7px; flex:none}
+
+  /* timeline */
+  .tl{position:relative; padding-left:28px}
+  .tl::before{content:""; position:absolute; left:8px; top:8px; bottom:8px; width:2px; background:linear-gradient(var(--line),var(--line))}
+  .ev{position:relative; margin-bottom:18px}
+  .ev:last-child{margin-bottom:0}
+  .ev .dot{position:absolute; left:-28px; top:2px; width:18px; height:18px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 0 1.5px var(--line); display:flex; align-items:center; justify-content:center; font-size:9px}
+  .ev.call .dot{background:var(--accent)} .ev.text .dot{background:var(--sky)}
+  .ev.email .dot{background:var(--amber)} .ev.milestone .dot{background:var(--good)}
+  .ev.task .dot{background:var(--violet)}
+  .ev.gap-mark .dot{background:var(--warn)}
+  .ev .row{display:flex; align-items:center; gap:9px; flex-wrap:wrap}
+  .ev .tag{font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; padding:3px 9px; border-radius:7px}
+  .ev.call .tag{background:var(--accent-soft); color:var(--accent)}
+  .ev.text .tag{background:var(--sky-soft); color:var(--sky)}
+  .ev.email .tag{background:var(--amber-soft); color:var(--amber)}
+  .ev.milestone .tag{background:var(--good-soft); color:var(--good)}
+  .ev.task .tag{background:var(--violet-soft); color:var(--violet)}
+  .ev.gap-mark .tag{background:var(--warn-soft); color:var(--warn)}
+  .ev .who{font-weight:700; font-size:13.5px}
+  .ev .when{font-size:12px; color:var(--faint); margin-left:auto; white-space:nowrap}
+  .ev .dir{font-size:11px; color:var(--muted); font-weight:600}
+  .ev .badge{font-size:10px; font-weight:800; padding:2px 8px; border-radius:6px; text-transform:uppercase; letter-spacing:.04em}
+  .ev .badge.auto{background:#f1f5f9; color:#64748b} .ev .badge.human{background:var(--good-soft); color:var(--good)}
+  .ev .body{margin-top:7px; font-size:13.5px; line-height:1.6; color:#334155; background:#f7f8fb; border:1px solid var(--line); border-radius:13px; padding:12px 15px}
+  .ev .body .meta{font-size:11.5px; color:var(--faint); margin-bottom:6px; font-weight:600; text-transform:uppercase; letter-spacing:.04em}
+  .ev.gap-mark .body{background:var(--warn-soft); border-color:#fecdd3; color:#9f1239; font-weight:600}
+  .ev.dim{opacity:.34}
+  .ev.hit .body{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+
+  /* messages / transcripts breakdown */
+  .filters{display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap}
+  .filters button{border:1.5px solid var(--line); background:#fff; color:var(--muted); border-radius:999px; padding:7px 15px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit; transition:.15s}
+  .filters button.on{background:var(--ink); color:#fff; border-color:var(--ink)}
+  .msg{border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:12px; transition:.15s}
+  .msg:last-child{margin-bottom:0}
+  .msg.dim{opacity:.32}
+  .msg.hit{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+  .msg .mhead{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:9px}
+  .msg .chan{font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; padding:3px 9px; border-radius:7px}
+  .msg.call .chan{background:var(--accent-soft); color:var(--accent)}
+  .msg.text .chan{background:var(--sky-soft); color:var(--sky)}
+  .msg.email .chan{background:var(--amber-soft); color:var(--amber)}
+  .msg.task .chan{background:var(--violet-soft); color:var(--violet)}
+
+  /* count strip */
+  .stat-strip{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px}
+  .stat{flex:1; min-width:120px; border:1px solid var(--line); border-radius:14px; padding:13px 15px; display:flex; align-items:center; gap:11px; background:#fff}
+  .stat .sic{width:38px; height:38px; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:17px}
+  .stat.call .sic{background:var(--accent-soft)} .stat.text .sic{background:var(--sky-soft)}
+  .stat.email .sic{background:var(--amber-soft)} .stat.task .sic{background:var(--violet-soft)}
+  .stat.slack .sic{background:var(--slack-soft)}
+  .stat .n{font-size:22px; font-weight:800; letter-spacing:-.02em; line-height:1}
+  .stat .l{font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-top:3px}
+
+  /* slack */
+  .slk{border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:12px; transition:.15s}
+  .slk:last-child{margin-bottom:0}
+  .slk.dim{opacity:.32} .slk.hit{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+  .slk .shead{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:8px}
+  .slk .ch{font-size:13px; font-weight:800; color:var(--slack); background:var(--slack-soft); padding:3px 11px; border-radius:8px}
+  .slk .swho{font-size:12.5px; color:var(--muted); font-weight:600}
+  .slk .swhen{font-size:12px; color:var(--faint); margin-left:auto}
+  .slk .ch a{color:var(--slack); text-decoration:none}
+  .slk .ch a:hover{text-decoration:underline}
+  .slk .recap-badge{font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; background:var(--amber-soft); color:var(--amber); border:1px solid #fde68a; padding:2px 9px; border-radius:6px}
+  .slk .recap-badge.issue{background:var(--warn-soft); color:var(--warn); border-color:#fecdd3}
+  .slk .auto-badge{font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; background:#f1f5f9; color:#64748b; padding:2px 9px; border-radius:6px}
+  .slk .scontent{font-size:13.5px; line-height:1.6; color:#374151}
+  .slk .srecap{margin-top:9px; background:#fbfbfe; border:1px dashed #cbd5e1; border-radius:11px; padding:10px 13px; font-size:13px; line-height:1.55; color:#334155}
+  .slk .srecap .rh{font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px}
+  .slk .slink{font-size:12px; font-weight:700; color:var(--slack); text-decoration:none; margin-left:auto}
+  .slk .noauto{margin-top:7px; font-size:12px; color:var(--faint); font-style:italic}
+  .recap-summary{background:var(--amber-soft); border:1px solid #fde68a; border-radius:13px; padding:12px 15px; margin-bottom:14px; font-size:13.5px; line-height:1.55; color:#92400e}
+  .recap-summary b{color:#b45309}
+  .msg .mwho{font-weight:700; font-size:13.5px}
+  .msg .mwhen{font-size:12px; color:var(--faint); margin-left:auto}
+  .msg .subj{font-weight:700; font-size:13.5px; color:#1f2637; margin-bottom:4px}
+  .msg .content{font-size:13.5px; line-height:1.62; color:#374151; white-space:pre-wrap}
+  .msg .badge{font-size:10px; font-weight:800; padding:2px 8px; border-radius:6px; text-transform:uppercase; letter-spacing:.04em}
+  .msg .badge.auto{background:#f1f5f9; color:#64748b} .msg .badge.human{background:var(--good-soft); color:var(--good)}
+
+  mark{background:#fde047; border-radius:3px; padding:0 2px; font-weight:600; animation:pop .3s ease}
+  @keyframes pop{from{background:#facc15}to{background:#fde047}}
+  .empty{color:var(--faint); font-size:13.5px; text-align:center; padding:18px}
+
+  .foot{color:rgba(255,255,255,.72); font-size:12px; text-align:center; margin-top:6px; line-height:1.6}
+  .foot code{background:rgba(255,255,255,.14); padding:1px 6px; border-radius:5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="demo-banner">🔴 <b>LIVE — real data, redacted.</b> Type any flip token → queried live from Snowflake. Names → initials, phone/address/email masked; transcript substance intact. Email (Zendesk) = Phase 2.</div>
+
+  <div class="brand">
+    <h1>Customer Interaction Audit</h1>
+    <p>Drop in a flip token. See everything that happened to the customer — and search every word we exchanged.</p>
+  </div>
+
+  <!-- HERO SEARCH -->
+  <div class="hero">
+    <div class="field-row">
+      <div class="field">
+        <span class="ic">🏷️</span>
+        <input id="flipInput" placeholder="Enter flip token (e.g. 5N2WC7B6QRCF4)" onkeydown="if(event.key==='Enter')loadFlip()"/>
+      </div>
+      <button class="btn" onclick="loadFlip()">Audit</button>
+    </div>
+    <div class="hero-sub">
+      <span class="lbl">Live · Snowflake</span>
+      <span id="demoChips"></span>
+    </div>
+    <div class="field-row" style="margin-top:16px">
+      <div class="field">
+        <span class="ic">🔎</span>
+        <input id="kwInput" placeholder="Search everything said — texts, emails, call transcripts (e.g. &quot;promised&quot;, &quot;another offer&quot;, &quot;repair&quot;)" oninput="runSearch()"/>
+      </div>
+    </div>
+    <div class="kw-chips">
+      <span class="lbl">Try</span>
+      <button class="kw" onclick="quickKw('promised')">what was promised</button>
+      <button class="kw" onclick="quickKw('another offer')">another offer</button>
+      <button class="kw" onclick="quickKw('repair')">repairs</button>
+      <button class="kw" onclick="quickKw('call me')">callback asks</button>
+      <button class="kw" onclick="quickKw('expire')">expiration</button>
+      <button class="kw" onclick="quickKw('')">clear</button>
+    </div>
+    <div class="search-status" id="searchStatus"></div>
+  </div>
+
+  <!-- EXPERIENCE HEADER -->
+  <div class="card">
+    <div class="head">
+      <div class="name" id="c-name"></div>
+      <div class="flip" id="c-flip"></div>
+      <div class="flip" id="c-addr" style="margin-top:1px"></div>
+      <div class="chips" id="c-chips"></div>
+    </div>
+    <div class="section">
+      <div class="label">📋 Journey audit — summary</div>
+      <div class="audit-metrics" id="auditMetrics"></div>
+      <div class="summary" id="c-summary"></div>
+    </div>
+    <div class="section">
+      <div class="label">⚠️ Misses & gaps — where, and who we were waiting on <span class="count" id="gap-count"></span></div>
+      <div id="c-gaps"></div>
+    </div>
+    <div class="section">
+      <div class="label">🗣️ Misstatements & inaccurate info told to the customer <span class="count" id="mis-count"></span></div>
+      <div id="c-mis"></div>
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="card">
+    <div class="section">
+      <div class="label">🕑 Timeline of the entire transaction <span class="count" id="tl-count"></span></div>
+      <div class="tl" id="timeline"></div>
+    </div>
+  </div>
+
+  <!-- MESSAGES & TRANSCRIPTS -->
+  <div class="card">
+    <div class="section">
+      <div class="label">💬 Every message & transcript — searchable <span class="count" id="msg-count"></span></div>
+      <div class="stat-strip" id="statStrip"></div>
+      <div class="filters" id="filters">
+        <button class="on" data-f="all" onclick="setFilter('all')">All</button>
+        <button data-f="text" onclick="setFilter('text')">💬 Texts</button>
+        <button data-f="email" onclick="setFilter('email')">✉️ Emails</button>
+        <button data-f="call" onclick="setFilter('call')">📞 Call transcripts</button>
+        <button data-f="task" onclick="setFilter('task')">✅ Tasks</button>
+      </div>
+      <div id="messages"></div>
+    </div>
+  </div>
+
+  <!-- SLACK MENTIONS -->
+  <div class="card">
+    <div class="section">
+      <div class="label">🟣 Slack mentions of this property / flip <span class="count" id="slk-count"></span></div>
+      <div id="recapSummary"></div>
+      <div id="slack"></div>
+    </div>
+  </div>
+
+  <!-- PRODUCT FACTS REFERENCE -->
+  <div class="card">
+    <div class="section">
+      <div class="label">📚 Product facts reference — source of truth for accuracy checks</div>
+      <div class="facts-note">🧪 Sample facts for the prototype. In the live build this is the <b>official product source of truth</b> the checker compares every statement against — a call, text, or email that contradicts one of these becomes an accuracy flag above.</div>
+      <div id="facts"></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    Prototype · self-contained (no backend) · mirrors the live spec: entry → search → experience → summary → gaps → timeline → full transcript search.<br/>
+    Live: any <code>flip_token</code> · Snowflake OPENCOMM + FLIP_DETAILS + Zendesk email · behind Cloudflare Access SSO.
+  </div>
+</div>
+
+<script>
+/*__DATA_START__*/
+const DATA = {};
+/*__DATA_END__*/
+
+/* ===== PRODUCT FACTS — source of truth the accuracy checker compares against (SAMPLE) ===== */
+const PRODUCT_FACTS = [
+  { id:"fee-cash", cat:"Fees", fact:"Cash / Cash+ service fee is 5% of the purchase price. (It is not ~3%.)" },
+  { id:"fee-alo", cat:"Fees", fact:"ALO (Agent Listing Option): seller pays standard agent commissions; Opendoor provides a backup cash offer — there's no Opendoor service fee on the listing itself." },
+  { id:"price-neg", cat:"Pricing", fact:"The cash offer price is NOT negotiable. It can only be re-evaluated if new or updated home information is provided — it is never haggled." },
+  { id:"repair-credit", cat:"Repairs", fact:"Post-diligence repair credits are set by the inspection scope and deducted from the offer. They are itemized, not open to negotiation." },
+  { id:"close-timeline", cat:"Timelines", fact:"The seller chooses the close date, typically 14–60 days out. 'As fast as 7 days' is not a standard commitment." },
+  { id:"offer-validity", cat:"Timelines", fact:"A final offer is valid for the window shown on the offer (commonly ~14 days). Any expiration date stated in comms must match the offer record." },
+  { id:"cnml-v3", cat:"Products", fact:"Cash+ / CNML V3 (Cash Now, More Later): the seller takes a cash advance now and receives an additional payment after Opendoor resells, net of costs — not simply a higher cash price." }
+];
+const FACTS_BY_ID = Object.fromEntries(PRODUCT_FACTS.map(f=>[f.id,f]));
+
+const SEARCHABLE = ["text","email","call","task"];   // searchable + counted
+const MSG_ALL = ["text","email","call"];              // what "All" shows
+const CHAN_LABEL = {text:"Text", email:"Email", call:"Call transcript", task:"Task"};
+let CURRENT_KEY=null, CURRENT=null, FILTER="all", KW="";
+
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function hl(s){ s=esc(s); if(!KW) return s; const re=new RegExp('('+KW.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'); return s.replace(re,'<mark>$1</mark>'); }
+function matches(ev){ if(!KW) return true; const hay=((ev.body||'')+' '+(ev.subj||'')+' '+(ev.who||'')).toLowerCase(); return hay.includes(KW); }
+
+function initChips(){
+  document.getElementById('demoChips').innerHTML = Object.keys(DATA).map(k=>
+    `<button class="demo-chip" data-k="${k}" onclick="pick('${k}')">${DATA[k].name.split(' — ')[0]} · ${k}</button>`).join(' ');
+}
+function pick(k){ document.getElementById('flipInput').value=k; loadFlip(); }
+async function loadFlip(){
+  const k = document.getElementById('flipInput').value.trim().toUpperCase();
+  if(!k) return;
+  const st=document.getElementById('searchStatus');
+  st.innerHTML = `⏳ Querying Snowflake for <b>${esc(k)}</b> … first lookup can take a few seconds.`;
+  try{
+    const res = await fetch('/api/audit/'+encodeURIComponent(k));
+    const data = await res.json();
+    if(!res.ok || data.error){ st.innerHTML = `⚠ ${esc(data.error || ('No records for '+k))}`; return; }
+    data.address = data.address || '';
+    DATA[k]=data; CURRENT_KEY=k; CURRENT=data; KW='';
+    document.getElementById('kwInput').value='';
+    renderAll();
+  }catch(e){ st.innerHTML = `⚠ ${esc(String(e))}`; }
+}
+function quickKw(v){ document.getElementById('kwInput').value=v; runSearch(); }
+function runSearch(){ if(!CURRENT) return; KW=document.getElementById('kwInput').value.trim().toLowerCase(); renderTimeline(); renderMessages(); renderSlack(); renderMisstatements(); renderFacts(); updateStatus(); }
+function setFilter(f){ FILTER=f; document.querySelectorAll('#filters button').forEach(b=>b.classList.toggle('on',b.dataset.f===f)); renderMessages(); }
+
+function renderAll(){
+  const c=CURRENT;
+  document.getElementById('c-name').textContent=c.name;
+  document.getElementById('c-flip').textContent="flip_token: "+CURRENT_KEY;
+  document.getElementById('c-addr').textContent = c.address ? "📍 "+c.address : "";
+  const e=c.experience;
+  document.getElementById('c-chips').innerHTML=
+    `<div class="chip"><span class="k">Product</span>${e.product}</div>`+
+    `<div class="chip"><span class="k">CNML</span>${e.cnml}</div>`+
+    `<div class="chip"><span class="k">Experiment</span>${e.arm}</div>`+
+    `<div class="chip"><span class="k">Channel</span>${e.channel}</div>`+
+    `<div class="chip"><span class="k">HSA</span>${e.hsa}</div>`+
+    `<div class="chip ${e.stateClass}"><span class="k">Status</span>${e.state}</div>`;
+  document.getElementById('c-summary').innerHTML=c.summary;
+  renderMetrics(); renderGaps(); renderMisstatements(); renderStats(); renderTimeline(); renderMessages(); renderSlack(); renderFacts(); updateStatus();
+}
+
+function renderFacts(){
+  const cats=[...new Set(PRODUCT_FACTS.map(f=>f.cat))];
+  document.getElementById('facts').innerHTML = cats.map(cat=>
+    `<div class="factgroup"><div class="factcat-h">${cat}</div>`+
+    PRODUCT_FACTS.filter(f=>f.cat===cat).map(f=>`<div class="fact"><span class="fdot"></span><div>${hl(f.fact)}</div></div>`).join('')+
+    `</div>`).join('');
+}
+
+function renderMisstatements(){
+  const c=CURRENT, list=c.misstatements||[];
+  document.getElementById('mis-count').textContent=list.length;
+  document.getElementById('c-mis').innerHTML = list.length
+    ? list.map(m=>{
+        const f = m.factRef ? FACTS_BY_ID[m.factRef] : null;
+        return `<div class="mis">
+        <div class="mhd"><span class="mwho">${hl(m.who)}</span><span class="mwhen">${m.when}</span><span class="sev ${m.sev}">${m.sev==='high'?'high impact':'review'}</span></div>
+        <div class="said">${hl(m.said)}</div>
+        <div class="line bad"><span class="k">⚠ Inaccurate: </span>${hl(m.issue)}</div>
+        <div class="line good"><span class="k">✓ Correct: </span>${hl(m.correct)}</div>
+        ${f?`<div class="line src"><span class="k">📌 Checked against: </span>${hl(f.fact)}<span class="factcat">${f.cat}</span></div>`:''}
+      </div>`;}).join('')
+    : `<div class="gap ok"><div class="ic">✅</div><div class="txt">No misstatements or inaccurate product info detected in this customer's calls, texts, or emails.</div></div>`;
+}
+
+function renderMetrics(){
+  const c=CURRENT;
+  const waitDays = c.gaps.reduce((s,g)=>s+(g.days||0),0);
+  const longest = c.gaps.reduce((m,g)=>Math.max(m,g.days||0),0);
+  const chans = ["call","text","email"].filter(t=>c.events.some(ev=>ev.type===t)).length;
+  const recaps = (c.slack||[]).filter(s=>!s.automated).length;
+  const cells=[
+    {n:waitDays+"d", l:"Total wait on us", cls:waitDays?"warnv":"okv"},
+    {n:c.gaps.length, l:"Misses / gaps", cls:c.gaps.length?"warnv":"okv"},
+    {n:longest?longest+"d":"—", l:"Longest single gap", cls:longest>=6?"warnv":""},
+    {n:(c.misstatements||[]).length, l:"Accuracy flags", cls:(c.misstatements||[]).length?"warnv":"okv"},
+    {n:chans+"/3", l:"Channels used", cls:""},
+    {n:recaps, l:"Slack recaps", cls:recaps?"":"okv"}
+  ];
+  document.getElementById('auditMetrics').innerHTML = cells.map(x=>
+    `<div class="amx"><div class="n ${x.cls}">${x.n}</div><div class="l">${x.l}</div></div>`).join('');
+}
+
+function renderGaps(){
+  const c=CURRENT;
+  document.getElementById('gap-count').textContent=c.gaps.length;
+  const OWN={"HSA":"#4f46e5","Sales Support / Repair desk":"#b45309","Title / TC":"#0e7490","TC":"#0e7490","Title":"#0e7490","Customer":"#059669"};
+  document.getElementById('c-gaps').innerHTML = c.gaps.length
+    ? c.gaps.map(g=>{
+        const col=OWN[g.owner]||"#475569";
+        const ic=g.sev==='mild'?'⏱':'⚠️';
+        return `<div class="gap ${g.sev}"><div class="ic">${ic}</div><div class="txt">
+          <div class="meta-row">
+            <span class="owner" style="color:${col};border-color:${col}33">⏳ Waiting on: ${g.owner}</span>
+            ${g.days?`<span class="waitchip">${g.days} day${g.days>1?'s':''}</span>`:''}
+          </div>
+          <div class="where">${g.where}</div>
+          <div style="margin-top:5px">${g.text}</div>
+        </div></div>`;
+      }).join('')
+    : `<div class="gap ok"><div class="ic">✅</div><div class="txt">No response gaps over 48h. Consistent hand-offs across HSA, TC, and Title — nothing outstanding.</div></div>`;
+}
+
+function renderStats(){
+  const c=CURRENT;
+  const n = t => c.events.filter(ev=>ev.type===t).length;
+  const stats = [
+    {t:"call", ic:"📞", l:"Calls", v:n("call")},
+    {t:"text", ic:"💬", l:"Texts", v:n("text")},
+    {t:"email", ic:"✉️", l:"Emails", v:n("email")},
+    {t:"task", ic:"✅", l:"Tasks", v:n("task")},
+    {t:"slack", ic:"🟣", l:"Slack", v:(c.slack||[]).length}
+  ];
+  document.getElementById('statStrip').innerHTML = stats.map(s=>
+    `<div class="stat ${s.t}"><div class="sic">${s.ic}</div><div><div class="n">${s.v}</div><div class="l">${s.l}</div></div></div>`).join('');
+}
+
+function renderTimeline(){
+  const c=CURRENT, tl=document.getElementById('timeline');
+  document.getElementById('tl-count').textContent=c.events.length;
+  tl.innerHTML = c.events.map(ev=>{
+    const isMsg = SEARCHABLE.includes(ev.type);
+    const hit = KW && isMsg && matches(ev);
+    const dim = KW && isMsg && !matches(ev);
+    const tag = ev.tag || (ev.type==='call'?'Call':ev.type==='text'?'Text':ev.type==='email'?'Email':ev.type==='task'?'Task':ev.type);
+    const dir = ev.dir?`<span class="dir">${ev.dir}</span>`:'';
+    const badge = ev.auto===true?'<span class="badge auto">automated</span>':(ev.auto===false?'<span class="badge human">human</span>':'');
+    const meta = ev.meta?`<div class="meta">${esc(ev.meta)}</div>`:'';
+    const subj = ev.subj?`<div style="font-weight:700;margin-bottom:3px">${hl(ev.subj)}</div>`:'';
+    return `<div class="ev ${ev.type} ${hit?'hit':''} ${dim?'dim':''}">
+      <div class="dot"></div>
+      <div class="row"><span class="tag">${tag}</span><span class="who">${hl(ev.who)}</span>${dir}${badge}<span class="when">${ev.when}</span></div>
+      <div class="body">${meta}${subj}${hl(ev.body)}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderMessages(){
+  const c=CURRENT, box=document.getElementById('messages');
+  let msgs = c.events.filter(ev=>SEARCHABLE.includes(ev.type));
+  document.getElementById('msg-count').textContent = c.events.filter(ev=>MSG_ALL.includes(ev.type)).length;
+  const shown = msgs.filter(ev=>(FILTER==='all' ? MSG_ALL.includes(ev.type) : ev.type===FILTER));
+  const rows = shown.map(ev=>{
+    const hit=KW&&matches(ev), dim=KW&&!matches(ev);
+    const badge = ev.auto===true?'<span class="badge auto">automated</span>':(ev.auto===false?'<span class="badge human">human</span>':'');
+    const subj = ev.subj?`<div class="subj">${hl(ev.subj)}</div>`:'';
+    const meta = ev.meta?`<div style="font-size:11.5px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">${esc(ev.meta)}</div>`:'';
+    return `<div class="msg ${ev.type} ${hit?'hit':''} ${dim?'dim':''}">
+      <div class="mhead"><span class="chan">${CHAN_LABEL[ev.type]}</span><span class="mwho">${hl(ev.who)}</span>
+        ${ev.dir?`<span class="dir" style="font-size:11px;color:var(--muted);font-weight:600">${ev.dir}</span>`:''}${badge}
+        <span class="mwhen">${ev.when}</span></div>
+      ${meta}${subj}<div class="content">${hl(ev.body)}</div>
+    </div>`;
+  }).join('');
+  box.innerHTML = rows || `<div class="empty">No ${FILTER==='all'?'messages':FILTER+'s'} for this customer.</div>`;
+}
+
+function slackMatch(s){ if(!KW) return true; return ((s.body||'')+' '+(s.channel||'')+' '+(s.who||'')+' '+(s.recap||'')).toLowerCase().includes(KW); }
+
+function renderSlack(){
+  const c=CURRENT, box=document.getElementById('slack');
+  const list = c.slack||[];
+  document.getElementById('slk-count').textContent=list.length;
+  const needRecap = list.filter(s=>!s.automated);   // content → recap; automated update → none
+  const issues = list.filter(s=>s.issue);
+  const rs=document.getElementById('recapSummary');
+  if(list.length){
+    const chans=[...new Set(needRecap.map(s=>s.channel))];
+    if(needRecap.length){
+      rs.className='recap-summary'; rs.style.background=''; rs.style.borderColor=''; rs.style.color='';
+      rs.innerHTML = `Mentioned in <b>${new Set(list.map(s=>s.channel)).size}</b> channel(s) · <b>${list.length-needRecap.length}</b> automated (no recap) · <b>${needRecap.length}</b> with content that need a recap: ${chans.join(', ')}.`+
+        (issues.length? ` <b>${issues.length}</b> flagged as open issue${issues.length>1?'s':''}.` : '');
+    } else {
+      rs.className='recap-summary'; rs.style.background='var(--good-soft)'; rs.style.borderColor='#a7f3d0'; rs.style.color='#065f46';
+      rs.innerHTML = `Mentioned in <b>${new Set(list.map(s=>s.channel)).size}</b> channel(s) — all automated updates, no recaps needed.`;
+    }
+  } else { rs.innerHTML=''; }
+  box.innerHTML = list.length ? list.map(s=>{
+    const hit=KW&&slackMatch(s), dim=KW&&!slackMatch(s);
+    const link=`https://opendoor.slack.com/archives/${s.cid}/p${s.ts||''}`;
+    const badge = s.automated ? `<span class="auto-badge">automated · no recap</span>`
+                 : `<span class="recap-badge ${s.issue?'issue':''}">${s.issue?'open issue · recap':'recap'}</span>`;
+    const recapBlock = (!s.automated && s.recap) ? `<div class="srecap"><div class="rh">📝 Recap</div>${hl(s.recap)}</div>` : '';
+    const autoNote = s.automated ? `<div class="noauto">General automated update — nothing to recap.</div>` : '';
+    return `<div class="slk ${hit?'hit':''} ${dim?'dim':''}">
+      <div class="shead"><span class="ch"><a href="${link}" target="_blank" rel="noopener">${hl(s.channel)}</a></span>
+        <span class="swho">${hl(s.who)}</span>${badge}<span class="swhen">${s.when}</span></div>
+      <div class="scontent">${hl(s.body)}</div>
+      ${recapBlock}${autoNote}
+      <div style="text-align:right;margin-top:8px"><a class="slink" href="${link}" target="_blank" rel="noopener">Open in Slack ↗</a></div>
+    </div>`;
+  }).join('') : `<div class="empty">No Slack mentions found for this property or flip token.</div>`;
+}
+
+function updateStatus(){
+  const st=document.getElementById('searchStatus');
+  if(!KW){ st.innerHTML = CURRENT?`Showing full record for <b>${CURRENT.name.split(' — ')[0]}</b>. Type a keyword above to search every text, email, transcript, task & Slack post.`:''; return; }
+  const hits = CURRENT.events.filter(ev=>SEARCHABLE.includes(ev.type)).filter(matches);
+  const byChan = SEARCHABLE.map(ch=>{const n=hits.filter(h=>h.type===ch).length; return n?`${n} ${CHAN_LABEL[ch].toLowerCase()}${n>1?'s':''}`:null;}).filter(Boolean);
+  const slkHits = (CURRENT.slack||[]).filter(slackMatch).length;
+  if(slkHits) byChan.push(`${slkHits} Slack post${slkHits>1?'s':''}`);
+  const total = hits.length + slkHits;
+  st.innerHTML = total
+    ? `<b>${total}</b> match${total>1?'es':''} for “<b>${esc(KW)}</b>” — ${byChan.join(' · ')}. Highlighted below.`
+    : `No mention of “<b>${esc(KW)}</b>” in this customer's texts, emails, transcripts, tasks, or Slack.`;
+}
+
+initChips();
+if(Object.keys(DATA).length){ pick(Object.keys(DATA)[0]); }
+else { document.getElementById('searchStatus').innerHTML = 'Enter a real flip token above and hit <b>Audit</b> to pull the live record from Snowflake.'; renderFacts(); }
+</script>
+</body>
+</html>

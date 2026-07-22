@@ -1,0 +1,23 @@
+{
+  "TEST0001DEMO": {
+    "customer": "M. S. — Phoenix, AZ",
+    "address": "48•• ••••••, Phoenix, AZ 8••••",
+    "experience": { "product": "Cash+", "cnml": "V3", "arm": "sales-26-02 · treatment", "channel": "Partner (Zillow)", "hsa": "Alex Haas", "state": "Signed", "stateClass": "state-good" },
+    "slack": [
+      { "channel": "#deal-updates", "cid": "C04DEALBOT", "ts": "1720000000", "when": "Jul 1, 9:12a", "who": "Deal Bot", "automated": true, "body": "📢 Offer sent — flip TEST0001DEMO (Cash+)." },
+      { "channel": "#acq-repair-escalations", "cid": "C04REPAIRS", "ts": "1720020000", "when": "Jul 9, 8:45a", "who": "DV Coordinator", "automated": false, "issue": true, "body": "Repair scope for this flip still open — customer asking. Needs an owner.", "recap": "⚠ Open issue: repair scope requested Jul 6, still not delivered Jul 9. Needs an owner to pull the number and update the customer." }
+    ],
+    "summary": "<b>Cash+ (CNML V3)</b> via <b>Zillow</b>, HSA <b>Alex Haas</b>. Build-pipeline smoke test — if you can read this and search below, the bake path works.",
+    "gaps": [
+      { "sev": "", "days": 6, "owner": "Sales Support / Repair desk", "where": "Post-diligence — waiting on repair scope", "text": "Customer chased the repair number twice; only automated texts went out." }
+    ],
+    "misstatements": [
+      { "who": "Alex Haas (HSA)", "when": "Jul 3 call", "channel": "call", "sev": "high", "said": "\"Our service fee is only about 3%.\"", "issue": "Understated the Cash+ fee used in the net comparison.", "correct": "Cash+ service fee is 5%, not ~3%.", "factRef": "fee-cash" }
+    ],
+    "events": [
+      { "type": "milestone", "tag": "Offer sent", "who": "Final offer ready", "when": "Jul 1, 9:12a", "body": "Cash+ final offer sent." },
+      { "type": "call", "who": "Alex Haas → Customer", "when": "Jul 3, 2:40p", "dir": "Outbound · 14m", "auto": false, "meta": "transcript · connected", "body": "Alex: Our service fee is only about 3%, so once that comes out it's much closer." },
+      { "type": "text", "who": "Customer → Opendoor", "when": "Jul 8, 4:20p", "dir": "Inbound", "auto": false, "body": "Any update on the repair costs?" }
+    ]
+  }
+}
