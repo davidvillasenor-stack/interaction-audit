@@ -35,6 +35,13 @@ def _fmt(ts: str) -> str:
     except Exception:  # noqa: BLE001
         return ""
 
+def _redact(t: str) -> str:
+    if not t:
+        return t
+    t = re.sub(r"[\w.+-]+@[\w.-]+\.\w+", "•••@•••", t)
+    t = re.sub(r"(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}", "(•••) •••-••••", t)
+    return t
+
 def _search(query: str, count: int = 25) -> list[dict]:
     import requests
     try:
@@ -66,20 +73,20 @@ def search_flip(flip: str, address: str | None = None) -> list[dict]:
     out = []
     for m in matches:
         ch = m.get("channel", {}) or {}
-        if ch.get("is_im") or ch.get("is_mpim") or ch.get("is_private"):
-            continue  # skip DMs / private personal threads
+        if ch.get("is_im") or ch.get("is_mpim"):
+            continue  # skip DMs only; private channels are kept (PII masked below)
         uname = (m.get("username") or m.get("user_name") or "").lower()
         is_auto = bool(m.get("bot_id")) or m.get("subtype") == "bot_message" or any(h in uname for h in BOT_HINTS)
         ts = str(m.get("ts", ""))
         out.append({
-            "channel": "#" + (ch.get("name") or "channel"),
+            "channel": "#" + (ch.get("name") or "channel") + (" (private)" if ch.get("is_private") else ""),
             "cid": ch.get("id") or "",
             "ts": ts.replace(".", ""),
             "when": _fmt(ts),
             "who": (m.get("user_name") or m.get("username") or "unknown") + (" (bot)" if is_auto else ""),
             "automated": is_auto,
             "issue": not is_auto,            # human posts flagged for a recap
-            "body": (m.get("text") or "")[:1200],
+            "body": _redact((m.get("text") or "")[:1200]),
             "recap": None,                    # generated recap is the LLM-phase upgrade
         })
     # newest first

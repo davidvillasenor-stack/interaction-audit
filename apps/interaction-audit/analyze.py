@@ -311,7 +311,7 @@ def analyze(raw):
     hsa = exp.get("hsa") or (_name_from_email(raw["calls"][0]["hsa_email"]) if raw.get("calls") else "—")
     summary = (f"<b>{product}{' · CNML '+cnml if cnml!='—' else ''}</b> via <b>{channel}</b>, HSA <b>{hsa}</b>. "
                f"Reached across {n_call} call(s), {n_text} text(s), and {n_email} email(s). "
-               + (f"<b>{len(gaps)} miss(es)</b>, total time the customer waited on us ≈ <b>{wait}d</b>. "
+               + (f"<b>{len(gaps)} miss(es)</b>, total time the customer waited on us ≈ <b>{wait:.1f}d</b>. "
                   if gaps else "<b>No response gaps over 48h.</b> ")
                + (f"<b>{len(mis)} accuracy flag(s)</b> on what we told the customer. " if mis else "")
                + (f"This offer's service fee: <b>{fee_disp}</b>. " if fee_disp != "—" else "")

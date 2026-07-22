@@ -449,9 +449,9 @@ function renderMetrics(){
   const chans = ["call","text","email"].filter(t=>c.events.some(ev=>ev.type===t)).length;
   const recaps = (c.slack||[]).filter(s=>!s.automated).length;
   const cells=[
-    {n:waitDays+"d", l:"Total wait on us", cls:waitDays?"warnv":"okv"},
+    {n:waitDays.toFixed(1)+"d", l:"Total wait on us", cls:waitDays?"warnv":"okv"},
     {n:c.gaps.length, l:"Misses / gaps", cls:c.gaps.length?"warnv":"okv"},
-    {n:longest?longest+"d":"—", l:"Longest single gap", cls:longest>=6?"warnv":""},
+    {n:longest?longest.toFixed(1)+"d":"—", l:"Longest single gap", cls:longest>=6?"warnv":""},
     {n:(c.misstatements||[]).length, l:"Accuracy flags", cls:(c.misstatements||[]).length?"warnv":"okv"},
     {n:chans+"/3", l:"Channels used", cls:""},
     {n:recaps, l:"Slack recaps", cls:recaps?"":"okv"}
