@@ -15,21 +15,25 @@ try:
 except Exception:  # noqa: BLE001
     PHX = None
 
+# Product facts — SOURCED FROM HSA HUB (projects.simplersell.com/hsa-hub), the live source
+# of truth for current products/pilots. Only assert what the source states.
+FACTS_SOURCE = "HSA Hub (projects.simplersell.com/hsa-hub)"
 PRODUCT_FACTS = [
-    {"id": "fee-cash", "cat": "Fees", "fact": "Cash / Cash+ service fee is 5% of the purchase price. (It is not ~3%.)"},
-    {"id": "fee-alo", "cat": "Fees", "fact": "ALO: seller pays standard agent commissions; no Opendoor service fee on the listing itself."},
-    {"id": "price-neg", "cat": "Pricing", "fact": "The cash offer price is NOT negotiable — only re-evaluated with new home information, never haggled."},
-    {"id": "repair-credit", "cat": "Repairs", "fact": "Post-diligence repair credits are set by the inspection scope and deducted from the offer — itemized, not negotiable."},
-    {"id": "close-timeline", "cat": "Timelines", "fact": "The seller chooses the close date, typically 14–60 days out. 'As fast as 7 days' is not a standard commitment."},
-    {"id": "cnml-v3", "cat": "Products", "fact": "Cash+ / CNML V3: cash advance now + an additional payment after Opendoor resells (net of costs) — not simply a higher cash price."},
+    {"id": "alo", "cat": "Products", "fact": "ALO = Agent-Led Offer — an offer generated through a real estate agent. (Not 'Agent Listing Option'.)"},
+    {"id": "cnml", "cat": "Products", "fact": "CNML = Cash Now, More Later — upfront cash now (CP1) plus a second payment (CP2) after Opendoor resells."},
+    {"id": "cp1", "cat": "Products", "fact": "CP1 (First Payment, CNML) = upfront cash at closing, ~75% of estimated sale price — NOT the full price. It must cover the seller's mortgage payoff, or CNML isn't a fit."},
+    {"id": "cp2", "cat": "Products", "fact": "CP2 (Second Payment, CNML) = additional proceeds paid after the home resells, up to 1 year later — not at closing."},
+    {"id": "fo", "cat": "Process", "fact": "FO = Final Offer, presented after underwriting. DV = Diligence Visit (via Inspectify), AFTER the contract is signed."},
+    {"id": "emd", "cat": "Process", "fact": "EMD (Earnest Money Deposit) = $1,250 deposited with the escrow agent."},
+    {"id": "fee", "cat": "Fees", "fact": "There is NO blanket fee — each offer's fee is unique. Verify fee claims against the customer's actual offer, not a fixed %."},
 ]
 
-# rule -> (factRef, sev, issue, correct)
+# rule -> (factRef, sev, issue, correct) — every rule maps to a fact above (all hsa-hub-sourced)
 MIS_META = {
-    "fee-low":   ("fee-cash", "high", "Understated the service fee used in the customer's net comparison.", "The Cash/Cash+ service fee is 5%, not lower. Re-quote net proceeds at 5%."),
-    "price-neg": ("price-neg", "med", "Implied the cash offer price is negotiable / open to a follow-up price talk.", "Opendoor cash offers aren't negotiated on price — only re-evaluated with new home info."),
-    "fast-close": ("close-timeline", "med", "Promised an unusually fast close that isn't a standard commitment.", "Seller picks the close date, typically 14–60 days. Avoid promising ~7 days."),
-    "repair-neg": ("repair-credit", "med", "Implied repair credits are negotiable.", "Repair credits are set by the inspection scope and itemized — not negotiable."),
+    "alo-mislabel": ("alo", "med", "Mislabeled ALO to the customer.", "ALO = Agent-Led Offer (an offer via a real estate agent), not 'Agent Listing Option'."),
+    "cnml-cp1":     ("cp1", "high", "Overstated the CNML first payment (CP1).", "CP1 is ~75% of estimated sale price (not full/100%), and must cover the mortgage payoff."),
+    "cp2-timing":   ("cp2", "med", "Misstated CNML second-payment (CP2) timing.", "CP2 is paid AFTER the home resells (up to 1 year) — not at closing."),
+    "emd-amount":   ("emd", "med", "Stated an incorrect earnest money amount.", "EMD is $1,250."),
 }
 
 def _parse(s):
@@ -83,34 +87,55 @@ def _sentences(text):
 
 def scan_misstatements(raw):
     prod = (raw.get("experience", {}).get("product") or "").lower()
+    of = raw.get("offer_fee") or {}
+    svc = of.get("service_pct")  # this offer's actual service fee %, or None
     hits = []
     def add(rule, who, when, said):
         f, sev, issue, correct = MIS_META[rule]
         hits.append({"who": who, "when": when, "channel": "call/text", "sev": sev,
                      "said": f'"{said.strip()[:240]}"', "issue": issue, "correct": correct, "factRef": f})
-    items = [("call", c) for c in raw.get("calls", [])] + [("text", t) for t in raw.get("texts", [])]
+    items = ([("call", c) for c in raw.get("calls", [])]
+             + [("text", t) for t in raw.get("texts", [])]
+             + [("email", e) for e in raw.get("emails", [])])
     for kind, it in items:
-        text = it.get("transcript") if kind == "call" else it.get("content")
+        text = it.get("transcript") if kind == "call" else (it.get("body") if kind == "email" else it.get("content"))
         if not text:
             continue
         who = _name_from_email(it.get("hsa_email")) + " (HSA)" if kind == "call" else "Opendoor"
-        when = _fmt(_parse(it.get("when"))) + (" call" if kind == "call" else " text")
+        when = _fmt(_parse(it.get("when"))) + (" call" if kind == "call" else (" email" if kind == "email" else " text"))
         for s in _sentences(text):
             sl = s.lower()
-            # fee understatement: a % below 5 near the word 'fee'
-            if "fee" in sl:
-                for m in re.finditer(r"(\d(?:\.\d+)?)\s*%", sl):
+            # ALO mislabeled (source of truth: ALO = Agent-Led Offer)
+            if re.search(r"agent listing option|agent[- ]listed offer|listing option", sl):
+                add("alo-mislabel", who, when, s)
+            # CNML first payment (CP1) overstated as full/100%
+            if (("cnml" in sl or "cash now more later" in sl or "first payment" in sl or "cp1" in sl)
+                    and re.search(r"full (price|amount)|100%|entire (price|amount)|all (your )?(cash|money|proceeds)", sl)):
+                add("cnml-cp1", who, when, s)
+            # CP2 timing (paid after resale, not at closing)
+            if re.search(r"second payment|cp2", sl) and re.search(r"at closing|up ?front|right away|immediately|at the close", sl):
+                add("cp2-timing", who, when, s)
+            # EMD amount ≠ $1,250
+            if re.search(r"earnest|emd", sl):
+                for m in re.finditer(r"\$\s?([0-9][0-9,]{2,})", sl):
+                    if m.group(1).replace(",", "") != "1250":
+                        add("emd-amount", who, when, s); break
+            # per-offer fee mismatch: a % quoted near fee/charge that differs from THIS offer's actual fee
+            if svc is not None and re.search(r"fee|service charge|experience charge", sl):
+                for m in re.finditer(r"(\d{1,2}(?:\.\d+)?)\s*%", sl):
                     try:
-                        if float(m.group(1)) < 5:
-                            add("fee-low", who, when, s); break
+                        q = float(m.group(1))
                     except ValueError:
-                        pass
-            if re.search(r"(flexib\w+ on price|negotiat\w* (the )?price|price is negotiab|come up on (the )?price|lower the price)", sl):
-                add("price-neg", who, when, s)
-            if re.search(r"(as fast as|close in|as quick as)\s*(a week|7 days|seven days|5 days)", sl):
-                add("fast-close", who, when, s)
-            if re.search(r"(negotiat\w* (the )?repair|repairs? (are|is) negotiab)", sl):
-                add("repair-neg", who, when, s)
+                        continue
+                    if abs(q - svc) > 0.5:
+                        hits.append({
+                            "who": who, "when": when, "channel": kind,
+                            "sev": "high" if q < svc else "med",
+                            "said": f'"{s.strip()[:240]}"',
+                            "issue": f"Quoted a {q:g}% fee, but this offer's actual service fee is {svc:g}%.",
+                            "correct": f"This offer's service fee is {svc:g}% ({of.get('service_name') or 'Opendoor Experience'}). Quote the customer's actual offer, not a fixed rate.",
+                            "factRef": "fee"})
+                        break
     # de-dup identical said+factRef
     seen, out = set(), []
     for h in hits:
@@ -169,6 +194,8 @@ def analyze(raw):
     channel = exp.get("channel") or "—"
     if exp.get("partner"):
         channel = f"{channel} ({exp['partner']})"
+    of = raw.get("offer_fee") or {}
+    fee_disp = f"{of['service_pct']:g}%" if of.get("service_pct") is not None else "—"
     state = (exp.get("flip_state") or "").replace("_", " ").title() or "—"
     good = any(k in (exp.get("flip_state") or "") for k in ("closed", "released", "acq_close"))
     withdrawn = "withdraw" in (exp.get("flip_state") or "")
@@ -194,6 +221,12 @@ def analyze(raw):
         else:
             dd = "out_auto" if t.get("is_automated") else "out_human"
         comms.append({"_dt": dt, "_kind": "text", "_dir": dd, "raw": t})
+    for e in raw.get("emails", []):
+        dt = _parse(e.get("when"))
+        if not dt:
+            continue
+        d = (e.get("direction") or "").lower()
+        comms.append({"_dt": dt, "_kind": "email", "_dir": "in" if "in" in d else "out_human", "raw": e})
     comms.sort(key=lambda x: x["_dt"])
 
     gaps = detect_gaps(raw, comms)
@@ -227,6 +260,11 @@ def analyze(raw):
                            "dir": ("Inbound" if c["_dir"] == "in" else "Outbound") + _dur(r.get("dur_s")),
                            "auto": False, "meta": f"transcript · {r.get('disposition') or ''}",
                            "body": r.get("transcript") or "(no transcript)"})
+        elif c["_kind"] == "email":
+            events.append({"_dt": c["_dt"], "type": "email",
+                           "who": "Customer → Opendoor" if c["_dir"] == "in" else "Opendoor → Customer",
+                           "when": _fmt(c["_dt"]), "dir": "Inbound" if c["_dir"] == "in" else "Outbound",
+                           "auto": False, "subj": r.get("subject"), "body": r.get("body") or ""})
         else:
             events.append({"_dt": c["_dt"], "type": "text",
                            "who": "Customer → Opendoor" if c["_dir"] == "in" else "Opendoor → Customer",
@@ -239,21 +277,24 @@ def analyze(raw):
     # counts + metrics for summary
     n_call = len(raw.get("calls", []))
     n_text = len(raw.get("texts", []))
+    n_email = len(raw.get("emails", []))
     n_task = len(raw.get("tasks", []))
     wait = round(sum(g.get("days", 0) for g in gaps), 1)
     hsa = exp.get("hsa") or (_name_from_email(raw["calls"][0]["hsa_email"]) if raw.get("calls") else "—")
     summary = (f"<b>{product}{' · CNML '+cnml if cnml!='—' else ''}</b> via <b>{channel}</b>, HSA <b>{hsa}</b>. "
-               f"Reached across {n_call} call(s) and {n_text} text(s). "
+               f"Reached across {n_call} call(s), {n_text} text(s), and {n_email} email(s). "
                + (f"<b>{len(gaps)} miss(es)</b>, total time the customer waited on us ≈ <b>{wait}d</b>. "
                   if gaps else "<b>No response gaps over 48h.</b> ")
                + (f"<b>{len(mis)} accuracy flag(s)</b> on what we told the customer. " if mis else "")
+               + (f"This offer's service fee: <b>{fee_disp}</b>. " if fee_disp != "—" else "")
                + f"Current status: <b>{state}</b>. <i>(v0 heuristics — LLM summary/accuracy upgrade later.)</i>")
 
     return {
         "customer": raw.get("customer", "Customer"),
-        "address": "",
+        "address": raw.get("address") or "",
         "experience": {"product": product, "cnml": cnml, "arm": exp.get("arm") or "—",
-                       "channel": channel, "hsa": hsa, "state": state, "stateClass": state_cls},
+                       "channel": channel, "hsa": hsa, "state": state, "stateClass": state_cls,
+                       "fee": fee_disp},
         "slack": [],  # live Slack wiring optional; empty for now
         "summary": summary,
         "gaps": gaps,

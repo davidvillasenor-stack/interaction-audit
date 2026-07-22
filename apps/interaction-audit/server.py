@@ -34,20 +34,24 @@ INDEX = (HERE / "index_live.html")
 def home():
     return INDEX.read_text() if INDEX.exists() else "<h1>index_live.html missing — run build first</h1>"
 
-@app.get("/api/audit/{flip}")
-def audit(flip: str, refresh: bool = False):
-    flip = flip.strip().upper()
-    if not flip:
-        return JSONResponse({"error": "empty flip token"}, status_code=400)
-    if flip in _CACHE and not refresh:
-        return _CACHE[flip]
+@app.get("/api/audit/{q:path}")
+def audit(q: str, refresh: bool = False):
+    q = (q or "").strip()
+    if not q:
+        return JSONResponse({"error": "empty query"}, status_code=400)
     try:
+        flip = pull.resolve_flip(q)         # flip token OR property address
+        if not flip:
+            return JSONResponse({"error": f"No flip or address match for '{q}'"}, status_code=404)
+        if flip in _CACHE and not refresh:
+            return _CACHE[flip]
         raw = pull.pull_flip(flip)          # live Snowflake, redacted
         result = analyze_mod.analyze(raw)   # deterministic + rule-based
     except Exception as e:  # noqa: BLE001
-        return JSONResponse({"error": f"{type(e).__name__}: {e}", "flip_token": flip}, status_code=500)
+        return JSONResponse({"error": f"{type(e).__name__}: {e}", "query": q}, status_code=500)
     if result.get("error"):
         return JSONResponse(result, status_code=404)
+    result["flip_token"] = flip
     _CACHE[flip] = result
     return result
 

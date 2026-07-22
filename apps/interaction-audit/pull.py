@@ -59,7 +59,7 @@ def red_addr(a): return mask_addr(a) if REDACT else (a or "")
 RESOLVE = """
 with lead as (
   select al.id lead_id, al.flip_id, al.flip_token, al.initial_customer_id,
-         al.phone_number, al.market_name
+         al.phone_number, al.market_name, al.email
   from DWH.dw.ax_leads al where al.flip_token = %(flip)s
 ),
 li as (select wc.uuid init_uuid, wc.household_id, wc.human_id,
@@ -73,6 +73,7 @@ select
   (select flip_id from lead) flip_id,
   (select market_name from lead) market_name,
   (select trim(fn||' '||ln) from li) cust_name,
+  (select email from lead) cust_email,
   (select right(regexp_replace(phone_number,'[^0-9]',''),10) from lead) ph10,
   array_construct((select init_uuid from li)) init_uuids,
   (select array_agg(cu) from au) hh_uuids
@@ -115,11 +116,31 @@ select fd.FLIP_STATE, fd.ACQ_CX, fd.MARKET_NAME, fd.LISTING_OFFER_CHANNEL,
        fd.FIRST_OFFER_SENT_AT, fd.LAST_OFFER_SENT_AT,
        fd.PURCHASE_AGREEMENT_COMPLETED_AT, fd.ACTUAL_CONTINGENCIES_RELEASE_DATE,
        fd.EXPECTED_ACQUISTION_CLOSE_DATE, fd.ACQUISITION_CLOSE_DATE,
-       acq.UW_COMPLETED_AT, acq.DILIGENCE_COMPLETED_AT, acq.IS_WALKED, acq.WALK_PRIMARY_REASON
+       acq.ADDRESS_FULL, acq.UW_COMPLETED_AT, acq.DILIGENCE_COMPLETED_AT,
+       acq.IS_WALKED, acq.WALK_PRIMARY_REASON
 from DWH.DATA_MART_FRONTEND.FLIP_DETAILS fd
 left join DWH.ACQUISITION.ACQ_L2_FLIP_DETAILS acq on acq.flip_token = fd.flip_token
 where fd.FLIP_TOKEN = %(flip)s
 limit 1
+"""
+
+EMAIL = """
+with u as (select ID from FIVETRAN.ZENDESK."USER" where lower(EMAIL) in ({emails})),
+t as (
+  select ID, SUBJECT, REQUESTER_ID
+  from FIVETRAN.ZENDESK.TICKET
+  where lower(CUSTOM_CUSTOMER_EMAIL) in ({emails})
+     or REQUESTER_ID in (select ID from u)
+)
+select c.ID id, c.CREATED created_at, c.PLAIN_BODY body, c.PUBLIC is_public,
+       c.USER_ID author_id, t.SUBJECT subject, t.REQUESTER_ID requester_id,
+       au.ROLE author_role
+from FIVETRAN.ZENDESK.TICKET_COMMENT c
+join t on t.ID = c.TICKET_ID
+left join FIVETRAN.ZENDESK."USER" au on au.ID = c.USER_ID
+where c.PLAIN_BODY is not null
+order by c.CREATED
+limit 200
 """
 
 ARM = """
@@ -127,6 +148,16 @@ select max(case when f.key='sales-26-02-experiment-incremental' then f.value:tre
        max(case when f.key='hot_seller_lead' then f.value:treatment::string end) tier
 from DWH.web.offers o, table(flatten(input=>parse_json(o.experiments))) f
 where o.flip_id = %(flip_id)s and o.experiments is not null
+"""
+
+# latest offer's actual per-offer fees (customer-facing). Percentages are FRACTIONS (0.0499 = 4.99%).
+FEE = """
+select o.number_of_fees, o.fee1_name, o.fee1_percentage, o.fee2_name, o.fee2_percentage,
+       o.fee3_name, o.fee3_percentage, o.fee4_name, o.fee4_percentage
+from DWH.web.offers o
+where o.flip_id = %(flip_id)s and o.fee1_percentage is not null
+order by o.created_at desc nulls last
+limit 1
 """
 
 def _sql_list(vals):
@@ -153,6 +184,28 @@ def sms_where(uuids, ph10):
 def iso(x):
     return x.isoformat() if hasattr(x, "isoformat") else (str(x) if x is not None else None)
 
+ADDR_LOOKUP = """
+select FLIP_TOKEN
+from DWH.ACQUISITION.ACQ_L2_FLIP_DETAILS
+where ADDRESS_FULL is not null and upper(ADDRESS_FULL) like upper(%(q)s)
+order by FLIP_CREATED_AT desc nulls last
+limit 1
+"""
+
+def resolve_flip(q: str) -> str | None:
+    """Accept a flip token OR a (partial) property address; return a flip_token."""
+    q = (q or "").strip()
+    if not q:
+        return None
+    # looks like a flip token (alphanumeric, no spaces) → confirm it exists
+    if re.fullmatch(r"[A-Za-z0-9]{8,20}", q):
+        r = query("select flip_token from DWH.dw.ax_leads where flip_token=%(q)s limit 1", {"q": q.upper()})
+        if r:
+            return q.upper()
+    # otherwise treat as an address → newest matching flip
+    r = query(ADDR_LOOKUP, {"q": f"%{q}%"})
+    return r[0]["FLIP_TOKEN"] if r else None
+
 def pull_flip(flip: str) -> dict:
     r = query(RESOLVE, {"flip": flip})
     if not r:
@@ -172,9 +225,53 @@ def pull_flip(flip: str) -> dict:
     arm = query(ARM, {"flip_id": flip_id}) if flip_id else []
     arm = arm[0] if arm else {}
 
+    # ── per-offer fee (customer-facing; each offer is unique) ──
+    feerow = query(FEE, {"flip_id": flip_id}) if flip_id else []
+    fr = feerow[0] if feerow else {}
+    def _pct(x):
+        try:
+            return round(float(x) * 100, 2)
+        except (TypeError, ValueError):
+            return None
+    offer_fee = None
+    if fr:
+        total = 0.0
+        for i in range(1, 5):
+            v = fr.get(f"FEE{i}_PERCENTAGE")
+            if v is not None:
+                total += float(v)
+        offer_fee = {
+            "service_name": fr.get("FEE1_NAME"),
+            "service_pct": _pct(fr.get("FEE1_PERCENTAGE")),
+            "total_pct": round(total * 100, 2),
+            "n_fees": fr.get("NUMBER_OF_FEES"),
+        }
+
+    # ── email (Zendesk via FIVETRAN) by customer email ──
+    emails_rows = []
+    cust_email = row.get("CUST_EMAIL")
+    if cust_email:
+        elist = _sql_list([cust_email.lower()])
+        try:
+            emails_rows = query(EMAIL.format(emails=elist))
+        except Exception:  # noqa: BLE001 — email is additive; never fail the whole audit on it
+            emails_rows = []
+    emails = []
+    for e in emails_rows:
+        cust = (e.get("AUTHOR_ID") is not None and e.get("AUTHOR_ID") == e.get("REQUESTER_ID")) \
+            or (e.get("AUTHOR_ROLE") or "").lower() == "end-user"
+        emails.append({
+            "id": e["ID"], "when": iso(e.get("CREATED_AT")),
+            "direction": "inbound" if cust else "outbound",
+            "subject": e.get("SUBJECT") or "(no subject)",
+            "is_public": bool(e.get("IS_PUBLIC")),
+            "body": e.get("BODY"),
+        })
+
     return {
         "flip_token": flip,
         "customer": red_name(row.get("CUST_NAME")),
+        "address": fd.get("ADDRESS_FULL"),  # shown (needed for Slack-by-address search)
         "market": fd.get("MARKET_NAME") or row.get("MARKET_NAME"),
         "experience": {
             "product": None,  # not on FLIP_DETAILS; derived in analyze (default Cash / ALO)
@@ -210,6 +307,8 @@ def pull_flip(flip: str) -> dict:
             "from": red_phone(s.get("FRM")), "to": red_phone(s.get("TOO")),
             "content": s.get("CONTENT"),
         } for s in sms],
+        "offer_fee": offer_fee,
+        "emails": emails,
         "tasks": [{"type": t["TASK_TYPE"], "when": iso(t["ACTIVE_AT"])} for t in tasks],
         "_redacted": REDACT,
     }

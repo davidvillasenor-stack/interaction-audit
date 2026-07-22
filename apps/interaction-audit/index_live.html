@@ -212,6 +212,13 @@
   .slk .srecap .rh{font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px}
   .slk .slink{font-size:12px; font-weight:700; color:var(--slack); text-decoration:none; margin-left:auto}
   .slk .noauto{margin-top:7px; font-size:12px; color:var(--faint); font-style:italic}
+  .slk-search{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px}
+  .slk-search .lbl{font-size:12.5px; font-weight:700; color:var(--muted)}
+  .slk-btn{display:inline-flex; align-items:center; gap:7px; text-decoration:none; font-family:inherit;
+    background:var(--slack-soft); color:var(--slack); border:1px solid #e6d5ea; border-radius:12px;
+    padding:9px 14px; font-size:13px; font-weight:700; transition:.15s}
+  .slk-btn:hover{background:#efe0f2; transform:translateY(-1px)}
+  .slk-btn .q{font-weight:500; opacity:.8}
   .recap-summary{background:var(--amber-soft); border:1px solid #fde68a; border-radius:13px; padding:12px 15px; margin-bottom:14px; font-size:13.5px; line-height:1.55; color:#92400e}
   .recap-summary b{color:#b45309}
   .msg .mwho{font-weight:700; font-size:13.5px}
@@ -231,7 +238,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="demo-banner">🔴 <b>LIVE — real data, redacted.</b> Type any flip token → queried live from Snowflake. Names → initials, phone/address/email masked; transcript substance intact. Email (Zendesk) = Phase 2.</div>
+  <div class="demo-banner">🔴 <b>LIVE — real data.</b> Type any flip token → queried live: calls+transcripts, texts, <b>email (Zendesk)</b>, tasks, milestones. <b>Property address shown</b> (for Slack-by-address search). Customer name→initials, phone masked. Accuracy checked vs <b>HSA Hub</b>.</div>
 
   <div class="brand">
     <h1>Customer Interaction Audit</h1>
@@ -243,7 +250,7 @@
     <div class="field-row">
       <div class="field">
         <span class="ic">🏷️</span>
-        <input id="flipInput" placeholder="Enter flip token (e.g. 5N2WC7B6QRCF4)" onkeydown="if(event.key==='Enter')loadFlip()"/>
+        <input id="flipInput" placeholder="Enter a flip token OR a property address" onkeydown="if(event.key==='Enter')loadFlip()"/>
       </div>
       <button class="btn" onclick="loadFlip()">Audit</button>
     </div>
@@ -320,6 +327,7 @@
   <div class="card">
     <div class="section">
       <div class="label">🟣 Slack mentions of this property / flip <span class="count" id="slk-count"></span></div>
+      <div class="slk-search" id="slkSearch"></div>
       <div id="recapSummary"></div>
       <div id="slack"></div>
     </div>
@@ -346,14 +354,15 @@ const DATA = {};
 /*__DATA_END__*/
 
 /* ===== PRODUCT FACTS — source of truth the accuracy checker compares against (SAMPLE) ===== */
+// Sourced from HSA Hub (projects.simplersell.com/hsa-hub) — live source of truth for products/pilots.
 const PRODUCT_FACTS = [
-  { id:"fee-cash", cat:"Fees", fact:"Cash / Cash+ service fee is 5% of the purchase price. (It is not ~3%.)" },
-  { id:"fee-alo", cat:"Fees", fact:"ALO (Agent Listing Option): seller pays standard agent commissions; Opendoor provides a backup cash offer — there's no Opendoor service fee on the listing itself." },
-  { id:"price-neg", cat:"Pricing", fact:"The cash offer price is NOT negotiable. It can only be re-evaluated if new or updated home information is provided — it is never haggled." },
-  { id:"repair-credit", cat:"Repairs", fact:"Post-diligence repair credits are set by the inspection scope and deducted from the offer. They are itemized, not open to negotiation." },
-  { id:"close-timeline", cat:"Timelines", fact:"The seller chooses the close date, typically 14–60 days out. 'As fast as 7 days' is not a standard commitment." },
-  { id:"offer-validity", cat:"Timelines", fact:"A final offer is valid for the window shown on the offer (commonly ~14 days). Any expiration date stated in comms must match the offer record." },
-  { id:"cnml-v3", cat:"Products", fact:"Cash+ / CNML V3 (Cash Now, More Later): the seller takes a cash advance now and receives an additional payment after Opendoor resells, net of costs — not simply a higher cash price." }
+  { id:"alo", cat:"Products", fact:"ALO = Agent-Led Offer — an offer generated through a real estate agent. (Not 'Agent Listing Option'.)" },
+  { id:"cnml", cat:"Products", fact:"CNML = Cash Now, More Later — upfront cash now (CP1) plus a second payment (CP2) after Opendoor resells." },
+  { id:"cp1", cat:"Products", fact:"CP1 (First Payment, CNML) = upfront cash at closing, ~75% of estimated sale price — NOT the full price. It must cover the seller's mortgage payoff, or CNML isn't a fit." },
+  { id:"cp2", cat:"Products", fact:"CP2 (Second Payment, CNML) = additional proceeds paid after the home resells, up to 1 year later — not at closing." },
+  { id:"fo", cat:"Process", fact:"FO = Final Offer, presented after underwriting. DV = Diligence Visit (via Inspectify), AFTER the contract is signed." },
+  { id:"emd", cat:"Process", fact:"EMD (Earnest Money Deposit) = $1,250 deposited with the escrow agent." },
+  { id:"fee", cat:"Fees", fact:"There is NO blanket fee — each offer's fee is unique. Verify fee claims against the customer's actual offer, not a fixed %." }
 ];
 const FACTS_BY_ID = Object.fromEntries(PRODUCT_FACTS.map(f=>[f.id,f]));
 
@@ -372,16 +381,17 @@ function initChips(){
 }
 function pick(k){ document.getElementById('flipInput').value=k; loadFlip(); }
 async function loadFlip(){
-  const k = document.getElementById('flipInput').value.trim().toUpperCase();
+  const k = document.getElementById('flipInput').value.trim();
   if(!k) return;
   const st=document.getElementById('searchStatus');
-  st.innerHTML = `⏳ Querying Snowflake for <b>${esc(k)}</b> … first lookup can take a few seconds.`;
+  st.innerHTML = `⏳ Looking up <b>${esc(k)}</b> (flip token or address) … first lookup can take a few seconds.`;
   try{
     const res = await fetch('/api/audit/'+encodeURIComponent(k));
     const data = await res.json();
     if(!res.ok || data.error){ st.innerHTML = `⚠ ${esc(data.error || ('No records for '+k))}`; return; }
     data.address = data.address || '';
-    DATA[k]=data; CURRENT_KEY=k; CURRENT=data; KW='';
+    const key = data.flip_token || k;   // key off the RESOLVED flip token (input may be an address)
+    DATA[key]=data; CURRENT_KEY=key; CURRENT=data; KW='';
     document.getElementById('kwInput').value='';
     renderAll();
   }catch(e){ st.innerHTML = `⚠ ${esc(String(e))}`; }
@@ -402,6 +412,7 @@ function renderAll(){
     `<div class="chip"><span class="k">Experiment</span>${e.arm}</div>`+
     `<div class="chip"><span class="k">Channel</span>${e.channel}</div>`+
     `<div class="chip"><span class="k">HSA</span>${e.hsa}</div>`+
+    (e.fee&&e.fee!=='—'?`<div class="chip"><span class="k">Offer fee</span>${e.fee}</div>`:'')+
     `<div class="chip ${e.stateClass}"><span class="k">Status</span>${e.state}</div>`;
   document.getElementById('c-summary').innerHTML=c.summary;
   renderMetrics(); renderGaps(); renderMisstatements(); renderStats(); renderTimeline(); renderMessages(); renderSlack(); renderFacts(); updateStatus();
@@ -529,6 +540,16 @@ function renderSlack(){
   const c=CURRENT, box=document.getElementById('slack');
   const list = c.slack||[];
   document.getElementById('slk-count').textContent=list.length;
+  // Live Slack-by-address / by-token search (deep-links into Opendoor Slack)
+  const surl = q => 'https://opendoor.slack.com/search/'+encodeURIComponent(q);
+  const addr = (c.address||'').trim();
+  const tok = CURRENT_KEY||'';
+  const searchBtns = document.getElementById('slkSearch');
+  if(searchBtns){
+    searchBtns.innerHTML = `<span class="lbl">🔍 Search Slack for this deal:</span>`
+      + (addr?`<a class="slk-btn" href="${surl(addr)}" target="_blank" rel="noopener">📍 Address <span class="q">${esc(addr)}</span></a>`:'')
+      + (tok?`<a class="slk-btn" href="${surl(tok)}" target="_blank" rel="noopener">🏷️ Flip token <span class="q">${esc(tok)}</span></a>`:'');
+  }
   const needRecap = list.filter(s=>!s.automated);   // content → recap; automated update → none
   const issues = list.filter(s=>s.issue);
   const rs=document.getElementById('recapSummary');
@@ -557,7 +578,7 @@ function renderSlack(){
       ${recapBlock}${autoNote}
       <div style="text-align:right;margin-top:8px"><a class="slink" href="${link}" target="_blank" rel="noopener">Open in Slack ↗</a></div>
     </div>`;
-  }).join('') : `<div class="empty">No Slack mentions found for this property or flip token.</div>`;
+  }).join('') : `<div class="empty">Click a search above to open Slack results for this address or flip token in a new tab.</div>`;
 }
 
 function updateStatus(){
