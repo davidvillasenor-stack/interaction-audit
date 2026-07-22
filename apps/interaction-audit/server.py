@@ -26,6 +26,7 @@ def _load(name):
 pull = _load("pull")
 analyze_mod = _load("analyze")
 slack_search = _load("slack_search")
+rca_mod = _load("rca")
 
 app = FastAPI(title="Customer Interaction Audit")
 _CACHE: dict[str, dict] = {}
@@ -35,6 +36,24 @@ INDEX = (HERE / "index_live.html")
 @app.get("/", response_class=HTMLResponse)
 def home():
     return INDEX.read_text() if INDEX.exists() else "<h1>index_live.html missing — run build first</h1>"
+
+def _assemble(flip: str) -> dict:
+    """Pull + analyze + attach flip_token + Slack. Returns the full audit result (or {error})."""
+    raw = pull.pull_flip(flip)
+    result = analyze_mod.analyze(raw)
+    if result.get("error"):
+        return result
+    result["flip_token"] = flip
+    try:
+        if slack_search.enabled():
+            result["slack"] = slack_search.search_flip(flip, result.get("address"))
+        else:
+            sc = HERE / "slack_cache" / f"{flip}.json"
+            if sc.exists():
+                result["slack"] = json.loads(sc.read_text())
+    except Exception:  # noqa: BLE001
+        pass
+    return result
 
 @app.get("/api/audit/{q:path}")
 def audit(q: str, refresh: bool = False):
@@ -47,26 +66,34 @@ def audit(q: str, refresh: bool = False):
             return JSONResponse({"error": f"No flip or address match for '{q}'"}, status_code=404)
         if flip in _CACHE and not refresh:
             return _CACHE[flip]
-        raw = pull.pull_flip(flip)          # live Snowflake, redacted
-        result = analyze_mod.analyze(raw)   # deterministic + rule-based
+        result = _assemble(flip)
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"error": f"{type(e).__name__}: {e}", "query": q}, status_code=500)
     if result.get("error"):
         return JSONResponse(result, status_code=404)
-    result["flip_token"] = flip
-    # Slack mentions: (1) live search when a Slack token is set → fully automatic for any flip;
-    # (2) else a per-flip cache; (3) else the UI's deep-link search.
-    try:
-        if slack_search.enabled():
-            result["slack"] = slack_search.search_flip(flip, result.get("address"))
-        else:
-            sc = HERE / "slack_cache" / f"{flip}.json"
-            if sc.exists():
-                result["slack"] = json.loads(sc.read_text())
-    except Exception:  # noqa: BLE001
-        pass
     _CACHE[flip] = result
     return result
+
+@app.get("/api/rca/{q:path}")
+def rca(q: str):
+    """One-click Case Summary & RCA → generate from the audit and DM it to David."""
+    q = (q or "").strip()
+    if not q:
+        return JSONResponse({"error": "empty query"}, status_code=400)
+    try:
+        flip = pull.resolve_flip(q)
+        if not flip:
+            return JSONResponse({"error": f"No flip or address match for '{q}'"}, status_code=404)
+        result = _CACHE.get(flip) or _assemble(flip)
+        if result.get("error"):
+            return JSONResponse(result, status_code=404)
+        _CACHE[flip] = result
+        text = rca_mod.build_rca(result, flip)
+        delivery = slack_search.deliver_dm(text)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": f"{type(e).__name__}: {e}", "query": q}, status_code=500)
+    return {"flip_token": flip, "delivered": delivery.get("delivered"),
+            "via": delivery.get("via"), "error": delivery.get("error"), "rca": text}
 
 @app.get("/healthz")
 def healthz():

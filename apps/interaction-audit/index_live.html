@@ -233,6 +233,20 @@
   .empty{color:var(--faint); font-size:13.5px; text-align:center; padding:18px}
   .loadmore{display:block; width:100%; margin-top:12px; padding:11px; border:1.5px dashed var(--line); background:#fbfbfe; color:var(--accent); border-radius:12px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; transition:.15s}
   .loadmore:hover{background:var(--accent-soft); border-color:var(--accent)}
+  .rca-btn{margin-top:16px; border:none; border-radius:13px; padding:11px 18px; font-size:13.5px; font-weight:700; cursor:pointer; font-family:inherit; background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.35); transition:.15s; position:relative}
+  .rca-btn:hover{background:rgba(255,255,255,.30)}
+  .rca-btn:disabled{opacity:.6; cursor:default}
+  .rca-modal{position:fixed; inset:0; background:rgba(11,16,32,.55); backdrop-filter:blur(4px); display:none; align-items:flex-start; justify-content:center; padding:40px 16px; z-index:50; overflow:auto}
+  .rca-modal.show{display:flex}
+  .rca-card{background:#fff; border-radius:18px; box-shadow:var(--shadow); max-width:760px; width:100%; padding:24px 26px}
+  .rca-card .rc-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
+  .rca-card .rc-head .t{font-size:16px; font-weight:800}
+  .rca-card .x{border:none; background:var(--line); border-radius:9px; width:32px; height:32px; font-size:16px; cursor:pointer; font-family:inherit}
+  .rca-toast{font-size:12.5px; font-weight:700; padding:8px 12px; border-radius:10px; margin-bottom:12px}
+  .rca-toast.ok{background:var(--good-soft); color:var(--good)}
+  .rca-toast.warn{background:var(--amber-soft); color:var(--amber)}
+  .rca-card pre{white-space:pre-wrap; word-wrap:break-word; font-family:'Inter',sans-serif; font-size:13px; line-height:1.6; color:#1f2637; background:#f7f8fb; border:1px solid var(--line); border-radius:12px; padding:16px; max-height:60vh; overflow:auto}
+  .rca-card .copy{margin-top:12px; border:1.5px solid var(--line); background:#fff; color:var(--accent); border-radius:11px; padding:9px 14px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit}
 
   .foot{color:rgba(255,255,255,.72); font-size:12px; text-align:center; margin-top:6px; line-height:1.6}
   .foot code{background:rgba(255,255,255,.14); padding:1px 6px; border-radius:5px}
@@ -285,6 +299,7 @@
       <div class="flip" id="c-flip"></div>
       <div class="flip" id="c-addr" style="margin-top:1px"></div>
       <div class="chips" id="c-chips"></div>
+      <button class="rca-btn" id="rcaBtn" onclick="genRCA()">📄 Generate Case Summary &amp; RCA → DM me</button>
     </div>
     <div class="section">
       <div class="label">📋 Journey audit — summary</div>
@@ -341,6 +356,15 @@
       <div class="label">📚 Product facts reference — source of truth for accuracy checks</div>
       <div class="facts-note">🧪 Sample facts for the prototype. In the live build this is the <b>official product source of truth</b> the checker compares every statement against — a call, text, or email that contradicts one of these becomes an accuracy flag above.</div>
       <div id="facts"></div>
+    </div>
+  </div>
+
+  <div class="rca-modal" id="rcaModal">
+    <div class="rca-card">
+      <div class="rc-head"><span class="t">📄 Case Summary &amp; Root Cause Analysis</span><button class="x" onclick="closeRCA()">✕</button></div>
+      <div id="rcaToast"></div>
+      <pre id="rcaText"></pre>
+      <button class="copy" onclick="copyRCA()">Copy to clipboard</button>
     </div>
   </div>
 
@@ -631,6 +655,25 @@ function updateStatus(){
     ? `<b>${total}</b> match${total>1?'es':''} for “<b>${esc(KW)}</b>” — ${byChan.join(' · ')}. Highlighted below.`
     : `No mention of “<b>${esc(KW)}</b>” in this customer's texts, emails, transcripts, tasks, or Slack.`;
 }
+
+async function genRCA(){
+  if(!CURRENT_KEY) return;
+  const b=document.getElementById('rcaBtn'); const orig=b.innerHTML;
+  b.disabled=true; b.innerHTML='⏳ Generating…';
+  try{
+    const res=await fetch('/api/rca/'+encodeURIComponent(CURRENT_KEY));
+    const d=await res.json();
+    if(!res.ok || (d.error && !d.rca)){ alert('RCA error: '+(d.error||('HTTP '+res.status))); return; }
+    document.getElementById('rcaText').textContent=d.rca||'';
+    const t=document.getElementById('rcaToast');
+    if(d.delivered){ t.className='rca-toast ok'; t.textContent='✅ Sent to your Slack DM.'; }
+    else { t.className='rca-toast warn'; t.textContent='⚠ Not DM\'d ('+(d.error||'no Slack webhook/token set')+'). Preview below — set SLACK_WEBHOOK_URL or SLACK_USER_TOKEN in .env to auto-DM.'; }
+    document.getElementById('rcaModal').classList.add('show');
+  }catch(e){ alert('RCA error: '+e); }
+  finally{ b.disabled=false; b.innerHTML=orig; }
+}
+function closeRCA(){ document.getElementById('rcaModal').classList.remove('show'); }
+function copyRCA(){ navigator.clipboard.writeText(document.getElementById('rcaText').textContent); const b=event.target; b.textContent='Copied ✓'; setTimeout(()=>b.textContent='Copy to clipboard',1500); }
 
 initChips();
 if(Object.keys(DATA).length){ pick(Object.keys(DATA)[0]); }
