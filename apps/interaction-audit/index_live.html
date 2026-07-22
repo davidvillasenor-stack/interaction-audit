@@ -231,6 +231,8 @@
   mark{background:#fde047; border-radius:3px; padding:0 2px; font-weight:600; animation:pop .3s ease}
   @keyframes pop{from{background:#facc15}to{background:#fde047}}
   .empty{color:var(--faint); font-size:13.5px; text-align:center; padding:18px}
+  .loadmore{display:block; width:100%; margin-top:12px; padding:11px; border:1.5px dashed var(--line); background:#fbfbfe; color:var(--accent); border-radius:12px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; transition:.15s}
+  .loadmore:hover{background:var(--accent-soft); border-color:var(--accent)}
 
   .foot{color:rgba(255,255,255,.72); font-size:12px; text-align:center; margin-top:6px; line-height:1.6}
   .foot code{background:rgba(255,255,255,.14); padding:1px 6px; border-radius:5px}
@@ -388,7 +390,14 @@ async function loadFlip(){
   try{
     const res = await fetch('/api/audit/'+encodeURIComponent(k));
     const data = await res.json();
-    if(!res.ok || data.error){ st.innerHTML = `⚠ ${esc(data.error || ('No records for '+k))}`; return; }
+    if(!res.ok || data.error){
+      if(res.status===404){
+        st.innerHTML = `🚫 <b>No flip found for “${esc(k)}”.</b> Not in any Opendoor flip record — double-check the flip token (or try the property address).`;
+      } else {
+        st.innerHTML = `⚠ ${esc(data.error || ('Error loading '+k))}`;
+      }
+      return;
+    }
     data.address = data.address || '';
     const key = data.flip_token || k;   // key off the RESOLVED flip token (input may be an address)
     DATA[key]=data; CURRENT_KEY=key; CURRENT=data; KW='';
@@ -402,6 +411,7 @@ function setFilter(f){ FILTER=f; document.querySelectorAll('#filters button').fo
 
 function renderAll(){
   const c=CURRENT;
+  MSG_EXPANDED=false;   // reset the 45-day view on each new flip
   document.getElementById('c-name').textContent=c.name;
   document.getElementById('c-flip').textContent="flip_token: "+CURRENT_KEY;
   document.getElementById('c-addr').textContent = c.address ? "📍 "+c.address : "";
@@ -515,11 +525,22 @@ function renderTimeline(){
   }).join('');
 }
 
+let MSG_EXPANDED=false;
 function renderMessages(){
   const c=CURRENT, box=document.getElementById('messages');
   let msgs = c.events.filter(ev=>SEARCHABLE.includes(ev.type));
+  // newest → oldest
+  msgs.sort((a,b)=>(b.iso||'').localeCompare(a.iso||''));
   document.getElementById('msg-count').textContent = c.events.filter(ev=>MSG_ALL.includes(ev.type)).length;
-  const shown = msgs.filter(ev=>(FILTER==='all' ? MSG_ALL.includes(ev.type) : ev.type===FILTER));
+  let shown = msgs.filter(ev=>(FILTER==='all' ? MSG_ALL.includes(ev.type) : ev.type===FILTER));
+  // default: last 45 days only (unless searching or expanded); older behind a Load button
+  let hiddenOlder=0;
+  if(!KW && !MSG_EXPANDED && shown.length && shown[0].iso){
+    const cutoff=new Date(new Date(shown[0].iso).getTime()-45*864e5);
+    const within=shown.filter(ev=>ev.iso && new Date(ev.iso)>=cutoff);
+    hiddenOlder=shown.length-within.length;
+    shown=within;
+  }
   const rows = shown.map(ev=>{
     const hit=KW&&matches(ev), dim=KW&&!matches(ev);
     const badge = ev.auto===true?'<span class="badge auto">automated</span>':(ev.auto===false?'<span class="badge human">human</span>':'');
@@ -532,7 +553,12 @@ function renderMessages(){
       ${meta}${subj}<div class="content">${hl(ev.body)}</div>
     </div>`;
   }).join('');
-  box.innerHTML = rows || `<div class="empty">No ${FILTER==='all'?'messages':FILTER+'s'} for this customer.</div>`;
+  const more = hiddenOlder>0
+    ? `<button class="loadmore" onclick="MSG_EXPANDED=true;renderMessages()">↓ Load ${hiddenOlder} older message${hiddenOlder>1?'s':''} (beyond 45 days)</button>`
+    : '';
+  const collapse = (MSG_EXPANDED && !KW)
+    ? `<button class="loadmore" onclick="MSG_EXPANDED=false;renderMessages()">↑ Show last 45 days only</button>` : '';
+  box.innerHTML = (rows || `<div class="empty">No ${FILTER==='all'?'messages':FILTER+'s'} for this customer.</div>`) + more + collapse;
 }
 
 function slackMatch(s){ if(!KW) return true; return ((s.body||'')+' '+(s.channel||'')+' '+(s.who||'')+' '+(s.recap||'')).toLowerCase().includes(KW); }

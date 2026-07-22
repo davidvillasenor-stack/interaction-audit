@@ -300,6 +300,7 @@ def analyze(raw):
                            "auto": (c["_dir"] == "out_auto"), "body": r.get("content") or ""})
     events.sort(key=lambda x: x["_dt"])
     for e in events:
+        e["iso"] = e["_dt"].isoformat()   # keep a sortable timestamp for the UI (newest-first + 45d window)
         e.pop("_dt", None)
 
     # counts + metrics for summary (windowed)
