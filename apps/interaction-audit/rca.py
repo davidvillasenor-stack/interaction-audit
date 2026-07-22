@@ -46,14 +46,16 @@ def build_rca(result: dict, flip: str) -> str:
     # Key facts
     L.append("*Key Facts*")
     L.append(f"• Product: {product}" + (f" (CNML {cnml})" if cnml and cnml != '—' else ""))
-    L.append(f"• Purchase / offer price: {_money(ec.get('price'))}")
+    L.append(f"• Purchase price: {_money(ec.get('purchase_price'))}")
+    L.append(f"• Offer price (headline): {_money(ec.get('offer_price'))}")
     L.append(f"• Est. net proceeds: {_money(ec.get('net_price'))}")
     if ec.get("list_price") is not None:
         L.append(f"• List price: {_money(ec.get('list_price'))}")
     L.append(f"• Offer service fee: {exp.get('fee','—')}")
-    if ec.get("repairs") is not None:
-        L.append(f"• Repair costs: {_money(ec.get('repairs'))}")
-    L.append(f"• ARV (est. resale value): {_money(ec.get('arv'))}")
+    if ec.get("ai_repairs") is not None:
+        L.append(f"• AI-scoped repairs: {_money(ec.get('ai_repairs'))}")
+    if ec.get("dv_repairs") is not None:
+        L.append(f"• Diligence repair result: {_money(ec.get('dv_repairs'))}")
     L.append(f"• Channel: {exp.get('channel','—')}")
     L.append(f"• HSA lead: {exp.get('hsa','—')}")
     L.append(f"• Status: {exp.get('state','—')}")

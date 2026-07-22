@@ -112,7 +112,7 @@ order by t.active_at
 """
 
 FLIP = """
-select fd.FLIP_STATE, fd.ACQ_CX, fd.MARKET_NAME, fd.LISTING_OFFER_CHANNEL,
+select fd.FLIP_STATE, fd.ACQ_CX, fd.MARKET_NAME, fd.LISTING_OFFER_CHANNEL, fd.ADDRESS_TOKEN,
        fd.FIRST_OFFER_SENT_AT, fd.LAST_OFFER_SENT_AT,
        fd.PURCHASE_AGREEMENT_COMPLETED_AT, fd.ACTUAL_CONTINGENCIES_RELEASE_DATE,
        fd.EXPECTED_ACQUISTION_CLOSE_DATE, fd.ACQUISITION_CLOSE_DATE,
@@ -162,6 +162,14 @@ order by o.created_at desc nulls last
 limit 1
 """
 
+# purchase price + post-diligence repair charge from AX_OFFERS (by address_token, latest offer)
+ECON = """
+select PRICE_PURCHASE, PRICE_OFFER_NET, OFFERED_REPAIRS_CHARGE_USD, REPAIR_COST_SELLER_CHARGED
+from DWH.dw.ax_offers where address_token = %(at)s
+order by id desc
+limit 1
+"""
+
 def _sql_list(vals):
     return ",".join("'" + str(v).replace("'", "''") + "'" for v in vals if v)
 
@@ -199,11 +207,14 @@ def resolve_flip(q: str) -> str | None:
     q = (q or "").strip()
     if not q:
         return None
-    # looks like a flip token (alphanumeric, no spaces) → confirm it exists
+    # looks like a flip token (alphanumeric, no spaces) → confirm it exists in EITHER the
+    # analytics marts (ax_leads) OR the operational flips table (web.flips, catches early-stage flips)
     if re.fullmatch(r"[A-Za-z0-9]{8,20}", q):
-        r = query("select flip_token from DWH.dw.ax_leads where flip_token=%(q)s limit 1", {"q": q.upper()})
-        if r:
-            return q.upper()
+        u = q.upper()
+        if query("select flip_token from DWH.dw.ax_leads where flip_token=%(q)s limit 1", {"q": u}):
+            return u
+        if query("select token from DWH.web.flips where token=%(q)s limit 1", {"q": u}):
+            return u
     # otherwise treat as an address → newest matching flip
     r = query(ADDR_LOOKUP, {"q": f"%{q}%"})
     return r[0]["FLIP_TOKEN"] if r else None
@@ -214,8 +225,22 @@ def pull_flip(flip: str) -> dict:
         return {"flip_token": flip, "error": "flip not found in ax_leads"}
     row = r[0]
     flip_id = row.get("FLIP_ID")
-    init = [u for u in (json.loads(row["INIT_UUIDS"]) if isinstance(row.get("INIT_UUIDS"), str) else (row.get("INIT_UUIDS") or [])) if u]
-    hh = [u for u in (json.loads(row["HH_UUIDS"]) if isinstance(row.get("HH_UUIDS"), str) else (row.get("HH_UUIDS") or [])) if u]
+    if not flip_id:  # early-stage flip not in the analytics marts → resolve flip_id operationally
+        wf = query("select id from DWH.web.flips where token=%(f)s limit 1", {"f": flip})
+        flip_id = wf[0]["ID"] if wf else None
+    def _arr(v):
+        # Snowflake arrays come back as JSON strings; array_construct(NULL) → "[undefined]" (invalid JSON)
+        if isinstance(v, list):
+            return [x for x in v if x]
+        if isinstance(v, str):
+            for s in (v, v.replace("undefined", "null")):
+                try:
+                    return [x for x in json.loads(s) if x]
+                except Exception:  # noqa: BLE001
+                    continue
+        return []
+    init = _arr(row.get("INIT_UUIDS"))
+    hh = _arr(row.get("HH_UUIDS"))
     uuids = sorted(set(init + hh))
     ph10 = row.get("PH10")
 
@@ -253,13 +278,25 @@ def pull_flip(flip: str) -> dict:
             return round(float(cents) / 100)
         except (TypeError, ValueError):
             return None
+    def _rnd(v):
+        try:
+            return round(float(v))
+        except (TypeError, ValueError):
+            return None
+    # AX_OFFERS (by address_token) → purchase price + post-diligence repair charge
+    address_token = fd.get("ADDRESS_TOKEN")
+    axo = {}
+    if address_token:
+        axr = query(ECON, {"at": address_token})
+        axo = axr[0] if axr else {}
+    offer_price = _usd(fr.get("RECORDED_PRICE_CENTS")) if fr else None
     economics = {
-        "price": _usd(fr.get("RECORDED_PRICE_CENTS")) if fr else None,
-        "net_price": _usd(fr.get("NET_PRICE_CENTS")) if fr else None,
-        "arv": _usd(fr.get("ARV_CENTS")) if fr else None,
+        "offer_price": offer_price,                                    # headline offer presented
+        "purchase_price": _rnd(axo.get("PRICE_PURCHASE")) or offer_price,  # final/contract price
+        "net_price": _rnd(axo.get("PRICE_OFFER_NET")) or (_usd(fr.get("NET_PRICE_CENTS")) if fr else None),
+        "ai_repairs": _rnd(axo.get("OFFERED_REPAIRS_CHARGE_USD")) or (_usd(fr.get("REPAIR_COSTS_ESTIMATE_CENTS")) if fr else None),
+        "dv_repairs": _rnd(axo.get("REPAIR_COST_SELLER_CHARGED")),      # post-diligence charge to seller
         "list_price": _usd(fr.get("EXTERNAL_LIST_PRICE_CENTS")) if fr else None,
-        "repairs": _usd((fr.get("OFFERED_REPAIRS_CHARGE_CENTS") or fr.get("REPAIR_COSTS_ESTIMATE_CENTS"))) if fr else None,
-        "valuation": _usd(fr.get("VALUATION_CENTS")) if fr else None,
     }
 
     # ── email (Zendesk via FIVETRAN) by customer email ──

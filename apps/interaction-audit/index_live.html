@@ -491,13 +491,13 @@ function renderKeyFacts(){
   const money=v=>(v==null||v==='')?'—':('$'+Number(v).toLocaleString());
   const rows=[
     ['Product', (e.product||'—') + (e.cnml&&e.cnml!=='—'?(' · CNML '+e.cnml):'')],
-    ['Purchase / offer price', money(ec.price)],
+    ['Purchase price', money(ec.purchase_price)],
+    ['Offer price (headline)', money(ec.offer_price)],
     ['Est. net proceeds', money(ec.net_price)],
     ['List price', money(ec.list_price)],
     ['Offer service fee', e.fee||'—'],
-    ['Repair costs', money(ec.repairs)],
-    ['ARV (est. resale value)', money(ec.arv)],
-    ['Valuation (OVM)', money(ec.valuation)],
+    ['AI-scoped repairs', money(ec.ai_repairs)],
+    ['Diligence repair result', money(ec.dv_repairs)],
     ['Channel', e.channel||'—'],
     ['HSA lead', e.hsa||'—'],
     ['Status', e.state||'—'],
