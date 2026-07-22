@@ -578,8 +578,9 @@ function renderStats(){
 
 function renderTimeline(){
   const c=CURRENT, tl=document.getElementById('timeline');
-  document.getElementById('tl-count').textContent=c.events.length;
-  tl.innerHTML = c.events.map(ev=>{
+  const evs = c.events.filter(ev=>ev.type!=='task');   // tasks excluded from the transaction timeline
+  document.getElementById('tl-count').textContent=evs.length;
+  tl.innerHTML = evs.map(ev=>{
     const isMsg = SEARCHABLE.includes(ev.type);
     const hit = KW && isMsg && matches(ev);
     const dim = KW && isMsg && !matches(ev);
