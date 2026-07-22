@@ -411,7 +411,7 @@ function setFilter(f){ FILTER=f; document.querySelectorAll('#filters button').fo
 
 function renderAll(){
   const c=CURRENT;
-  MSG_EXPANDED=false;   // reset the 45-day view on each new flip
+  MSG_EXPANDED=false; TL_EXPANDED=false;   // reset the 45-day views on each new flip
   document.getElementById('c-name').textContent=c.name;
   document.getElementById('c-flip').textContent="flip_token: "+CURRENT_KEY;
   document.getElementById('c-addr').textContent = c.address ? "📍 "+c.address : "";
@@ -504,10 +504,19 @@ function renderStats(){
     `<div class="stat ${s.t}"><div class="sic">${s.ic}</div><div><div class="n">${s.v}</div><div class="l">${s.l}</div></div></div>`).join('');
 }
 
+let TL_EXPANDED=false;
 function renderTimeline(){
   const c=CURRENT, tl=document.getElementById('timeline');
-  const evs = c.events.filter(ev=>ev.type!=='task');   // tasks excluded from the transaction timeline
+  let evs = c.events.filter(ev=>ev.type!=='task');   // tasks excluded from the transaction timeline
+  evs.sort((a,b)=>(b.iso||'').localeCompare(a.iso||''));   // most recent → oldest
   document.getElementById('tl-count').textContent=evs.length;
+  let hiddenOlder=0;
+  if(!KW && !TL_EXPANDED && evs.length && evs[0].iso){
+    const cutoff=new Date(new Date(evs[0].iso).getTime()-45*864e5);
+    const within=evs.filter(ev=>ev.iso && new Date(ev.iso)>=cutoff);
+    hiddenOlder=evs.length-within.length;
+    evs=within;
+  }
   tl.innerHTML = evs.map(ev=>{
     const isMsg = SEARCHABLE.includes(ev.type);
     const hit = KW && isMsg && matches(ev);
@@ -522,7 +531,9 @@ function renderTimeline(){
       <div class="row"><span class="tag">${tag}</span><span class="who">${hl(ev.who)}</span>${dir}${badge}<span class="when">${ev.when}</span></div>
       <div class="body">${meta}${subj}${hl(ev.body)}</div>
     </div>`;
-  }).join('');
+  }).join('')
+    + (hiddenOlder>0?`<button class="loadmore" onclick="TL_EXPANDED=true;renderTimeline()">↓ Load ${hiddenOlder} older event${hiddenOlder>1?'s':''} (beyond 45 days)</button>`:'')
+    + ((TL_EXPANDED&&!KW)?`<button class="loadmore" onclick="TL_EXPANDED=false;renderTimeline()">↑ Show last 45 days only</button>`:'');
 }
 
 let MSG_EXPANDED=false;

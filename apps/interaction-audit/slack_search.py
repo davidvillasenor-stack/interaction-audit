@@ -35,6 +35,26 @@ def _fmt(ts: str) -> str:
     except Exception:  # noqa: BLE001
         return ""
 
+WEBHOOK = os.environ.get("SLACK_WEBHOOK_URL")
+DM_TARGET = os.environ.get("SLACK_DM_TARGET", "D5PJ7KM2P")  # David's DM by default
+
+def deliver_dm(text: str) -> dict:
+    """Best-effort Slack delivery for the RCA button.
+    Prefers an Incoming Webhook (simplest); falls back to a user token (chat.postMessage)."""
+    import requests
+    try:
+        if WEBHOOK:
+            r = requests.post(WEBHOOK, json={"text": text}, timeout=15)
+            return {"delivered": r.status_code == 200, "via": "webhook"}
+        if TOKEN:
+            r = requests.post("https://slack.com/api/chat.postMessage",
+                              headers={"Authorization": f"Bearer {TOKEN}"},
+                              json={"channel": DM_TARGET, "text": text}, timeout=15)
+            return {"delivered": bool(r.json().get("ok")), "via": "token", "error": r.json().get("error")}
+    except Exception as e:  # noqa: BLE001
+        return {"delivered": False, "error": str(e)}
+    return {"delivered": False, "error": "no SLACK_WEBHOOK_URL or SLACK_USER_TOKEN set"}
+
 def _redact(t: str) -> str:
     if not t:
         return t
