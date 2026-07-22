@@ -90,6 +90,11 @@
   .label{font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:14px; display:flex; align-items:center; gap:9px}
   .label .count{background:var(--accent-soft); color:var(--accent); border-radius:999px; padding:2px 10px; font-size:11px; font-weight:800}
 
+  .keyfacts{width:100%; border-collapse:collapse}
+  .keyfacts td{padding:9px 10px; border-bottom:1px solid var(--line); font-size:13.5px; vertical-align:top}
+  .keyfacts td.k{color:var(--muted); font-weight:700; width:44%; white-space:nowrap}
+  .keyfacts td.v{color:#1f2637; font-weight:700}
+  .keyfacts tr:last-child td{border-bottom:none}
   .summary{font-size:15px; line-height:1.65; color:#1f2637}
   .summary b{color:#0b1020; font-weight:700}
 
@@ -302,12 +307,16 @@
       <button class="rca-btn" id="rcaBtn" onclick="genRCA()">📄 Generate Case Summary &amp; RCA → DM me</button>
     </div>
     <div class="section">
-      <div class="label">📋 Journey audit — summary</div>
+      <div class="label">📋 Executive Summary</div>
       <div class="audit-metrics" id="auditMetrics"></div>
       <div class="summary" id="c-summary"></div>
     </div>
     <div class="section">
-      <div class="label">⚠️ Misses & gaps — where, and who we were waiting on <span class="count" id="gap-count"></span></div>
+      <div class="label">📑 Key Facts &amp; Deal Economics</div>
+      <table class="keyfacts" id="c-keyfacts"></table>
+    </div>
+    <div class="section">
+      <div class="label">🔍 Root Cause Analysis — where, and who we were waiting on <span class="count" id="gap-count"></span></div>
       <div id="c-gaps"></div>
     </div>
     <div class="section">
@@ -436,6 +445,7 @@ function setFilter(f){ FILTER=f; document.querySelectorAll('#filters button').fo
 function renderAll(){
   const c=CURRENT;
   MSG_EXPANDED=false; TL_EXPANDED=false;   // reset the 45-day views on each new flip
+  renderKeyFacts();
   document.getElementById('c-name').textContent=c.name;
   document.getElementById('c-flip').textContent="flip_token: "+CURRENT_KEY;
   document.getElementById('c-addr').textContent = c.address ? "📍 "+c.address : "";
@@ -476,6 +486,25 @@ function renderMisstatements(){
     : `<div class="gap ok"><div class="ic">✅</div><div class="txt">No misstatements or inaccurate product info detected in this customer's calls, texts, or emails.</div></div>`;
 }
 
+function renderKeyFacts(){
+  const c=CURRENT, e=c.experience||{}, ec=c.economics||{};
+  const money=v=>(v==null||v==='')?'—':('$'+Number(v).toLocaleString());
+  const rows=[
+    ['Product', (e.product||'—') + (e.cnml&&e.cnml!=='—'?(' · CNML '+e.cnml):'')],
+    ['Purchase / offer price', money(ec.price)],
+    ['Est. net proceeds', money(ec.net_price)],
+    ['List price', money(ec.list_price)],
+    ['Offer service fee', e.fee||'—'],
+    ['Repair costs', money(ec.repairs)],
+    ['ARV (est. resale value)', money(ec.arv)],
+    ['Valuation (OVM)', money(ec.valuation)],
+    ['Channel', e.channel||'—'],
+    ['HSA lead', e.hsa||'—'],
+    ['Status', e.state||'—'],
+  ];
+  document.getElementById('c-keyfacts').innerHTML =
+    rows.map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join('');
+}
 function renderMetrics(){
   const c=CURRENT;
   const waitDays = c.gaps.reduce((s,g)=>s+(g.days||0),0);

@@ -153,7 +153,9 @@ where o.flip_id = %(flip_id)s and o.experiments is not null
 # latest offer's actual per-offer fees (customer-facing). Percentages are FRACTIONS (0.0499 = 4.99%).
 FEE = """
 select o.number_of_fees, o.fee1_name, o.fee1_percentage, o.fee2_name, o.fee2_percentage,
-       o.fee3_name, o.fee3_percentage, o.fee4_name, o.fee4_percentage
+       o.fee3_name, o.fee3_percentage, o.fee4_name, o.fee4_percentage,
+       o.recorded_price_cents, o.net_price_cents, o.arv_cents, o.external_list_price_cents,
+       o.offered_repairs_charge_cents, o.repair_costs_estimate_cents, o.valuation_cents
 from DWH.web.offers o
 where o.flip_id = %(flip_id)s and o.fee1_percentage is not null
 order by o.created_at desc nulls last
@@ -246,6 +248,19 @@ def pull_flip(flip: str) -> dict:
             "total_pct": round(total * 100, 2),
             "n_fees": fr.get("NUMBER_OF_FEES"),
         }
+    def _usd(cents):
+        try:
+            return round(float(cents) / 100)
+        except (TypeError, ValueError):
+            return None
+    economics = {
+        "price": _usd(fr.get("RECORDED_PRICE_CENTS")) if fr else None,
+        "net_price": _usd(fr.get("NET_PRICE_CENTS")) if fr else None,
+        "arv": _usd(fr.get("ARV_CENTS")) if fr else None,
+        "list_price": _usd(fr.get("EXTERNAL_LIST_PRICE_CENTS")) if fr else None,
+        "repairs": _usd((fr.get("OFFERED_REPAIRS_CHARGE_CENTS") or fr.get("REPAIR_COSTS_ESTIMATE_CENTS"))) if fr else None,
+        "valuation": _usd(fr.get("VALUATION_CENTS")) if fr else None,
+    }
 
     # ── email (Zendesk via FIVETRAN) by customer email ──
     emails_rows = []
@@ -308,6 +323,7 @@ def pull_flip(flip: str) -> dict:
             "content": s.get("CONTENT"),
         } for s in sms],
         "offer_fee": offer_fee,
+        "economics": economics,
         "emails": emails,
         "tasks": [{"type": t["TASK_TYPE"], "when": iso(t["ACTIVE_AT"])} for t in tasks],
         "_redacted": REDACT,

@@ -14,6 +14,12 @@ def _strip(html: str) -> str:
 
 def build_rca(result: dict, flip: str) -> str:
     exp = result.get("experience", {}) or {}
+    ec = result.get("economics") or {}
+    def _money(v):
+        try:
+            return "$" + format(int(v), ",")
+        except (TypeError, ValueError):
+            return "—"
     product = exp.get("product") or "—"
     cnml = exp.get("cnml")
     gaps = result.get("gaps", []) or []
@@ -40,7 +46,14 @@ def build_rca(result: dict, flip: str) -> str:
     # Key facts
     L.append("*Key Facts*")
     L.append(f"• Product: {product}" + (f" (CNML {cnml})" if cnml and cnml != '—' else ""))
+    L.append(f"• Purchase / offer price: {_money(ec.get('price'))}")
+    L.append(f"• Est. net proceeds: {_money(ec.get('net_price'))}")
+    if ec.get("list_price") is not None:
+        L.append(f"• List price: {_money(ec.get('list_price'))}")
     L.append(f"• Offer service fee: {exp.get('fee','—')}")
+    if ec.get("repairs") is not None:
+        L.append(f"• Repair costs: {_money(ec.get('repairs'))}")
+    L.append(f"• ARV (est. resale value): {_money(ec.get('arv'))}")
     L.append(f"• Channel: {exp.get('channel','—')}")
     L.append(f"• HSA lead: {exp.get('hsa','—')}")
     L.append(f"• Status: {exp.get('state','—')}")

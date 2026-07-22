@@ -322,6 +322,7 @@ def analyze(raw):
     return {
         "customer": raw.get("customer", "Customer"),
         "address": raw.get("address") or "",
+        "economics": raw.get("economics") or {},
         "experience": {"product": product, "cnml": cnml, "arm": exp.get("arm") or "—",
                        "channel": channel, "hsa": hsa, "state": state, "stateClass": state_cls,
                        "fee": fee_disp},
