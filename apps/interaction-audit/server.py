@@ -25,6 +25,7 @@ def _load(name):
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); return mod
 pull = _load("pull")
 analyze_mod = _load("analyze")
+slack_search = _load("slack_search")
 
 app = FastAPI(title="Customer Interaction Audit")
 _CACHE: dict[str, dict] = {}
@@ -53,14 +54,17 @@ def audit(q: str, refresh: bool = False):
     if result.get("error"):
         return JSONResponse(result, status_code=404)
     result["flip_token"] = flip
-    # Slack mentions: served from a per-flip cache (populated via the Slack connector),
-    # since the backend has no Slack token. Falls back to the UI's deep-link search.
-    sc = HERE / "slack_cache" / f"{flip}.json"
-    if sc.exists():
-        try:
-            result["slack"] = json.loads(sc.read_text())
-        except Exception:  # noqa: BLE001
-            pass
+    # Slack mentions: (1) live search when a Slack token is set → fully automatic for any flip;
+    # (2) else a per-flip cache; (3) else the UI's deep-link search.
+    try:
+        if slack_search.enabled():
+            result["slack"] = slack_search.search_flip(flip, result.get("address"))
+        else:
+            sc = HERE / "slack_cache" / f"{flip}.json"
+            if sc.exists():
+                result["slack"] = json.loads(sc.read_text())
+    except Exception:  # noqa: BLE001
+        pass
     _CACHE[flip] = result
     return result
 

@@ -6,3 +6,4 @@ data.*.json
 !data.test.json
 index.html
 index.*.html
+.env

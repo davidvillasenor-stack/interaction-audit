@@ -5,9 +5,17 @@ set -e
 APPDIR="$(cd "$(dirname "$0")" && pwd)"
 PORT="${PORT:-8799}"
 
-python3 -m pip install --quiet fastapi uvicorn >/dev/null 2>&1 || true
+python3 -m pip install --quiet fastapi uvicorn requests >/dev/null 2>&1 || true
+
+# Load a local .env (never committed) for SLACK_USER_TOKEN etc.
+[ -f "$APPDIR/.env" ] && set -a && . "$APPDIR/.env" && set +a
 
 cd "$APPDIR"
+if [ -n "$SLACK_USER_TOKEN$SLACK_TOKEN" ]; then
+  echo "  Slack: LIVE search enabled (token found)"
+else
+  echo "  Slack: deep-link search (set SLACK_USER_TOKEN for live auto-search)"
+fi
 echo "──────────────────────────────────────────────────────────────"
 echo "  Customer Interaction Audit (LIVE)"
 echo "  Local:      http://localhost:$PORT"
