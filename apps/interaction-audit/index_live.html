@@ -250,6 +250,15 @@
   .rca-toast{font-size:12.5px; font-weight:700; padding:8px 12px; border-radius:10px; margin-bottom:12px}
   .rca-toast.ok{background:var(--good-soft); color:var(--good)}
   .rca-toast.warn{background:var(--amber-soft); color:var(--amber)}
+  .muted-inline{color:var(--muted); font-weight:500; font-size:11.5px}
+  .tl-head{cursor:pointer; user-select:none}
+  .tl-head:hover{color:var(--accent)}
+  .caret{display:inline-block; width:14px; color:var(--accent); font-weight:800}
+  .body-toggle{display:inline-block; margin-top:6px; border:1px solid var(--line); background:var(--accent-soft);
+    color:var(--accent); border-radius:8px; padding:3px 10px; font-size:11.5px; font-weight:700;
+    cursor:pointer; font-family:inherit}
+  .body-toggle:hover{background:#e6e8ff}
+  .bfull{display:block}
   .rca-card pre{white-space:pre-wrap; word-wrap:break-word; font-family:'Inter',sans-serif; font-size:13px; line-height:1.6; color:#1f2637; background:#f7f8fb; border:1px solid var(--line); border-radius:12px; padding:16px; max-height:60vh; overflow:auto}
   .rca-card .copy{margin-top:12px; border:1.5px solid var(--line); background:#fff; color:var(--accent); border-radius:11px; padding:9px 14px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit}
 
@@ -271,7 +280,7 @@
     <div class="field-row">
       <div class="field">
         <span class="ic">🏷️</span>
-        <input id="flipInput" placeholder="Enter a flip token OR a property address" onkeydown="if(event.key==='Enter')loadFlip()"/>
+        <input id="flipInput" placeholder="Enter a flip token (e.g. 52NKJYH9PAEYX)" onkeydown="if(event.key==='Enter')loadFlip()"/>
       </div>
       <button class="btn" onclick="loadFlip()">Audit</button>
     </div>
@@ -328,7 +337,7 @@
   <!-- TIMELINE -->
   <div class="card">
     <div class="section">
-      <div class="label">🕑 Timeline of the entire transaction <span class="count" id="tl-count"></span></div>
+      <div class="label tl-head" onclick="toggleTimeline()"><span class="caret" id="tlCaret">▾</span> 🕑 Timeline of the entire transaction <span class="count" id="tl-count"></span></div>
       <div class="tl" id="timeline"></div>
     </div>
   </div>
@@ -419,23 +428,27 @@ async function loadFlip(){
   const k = document.getElementById('flipInput').value.trim();
   if(!k) return;
   const st=document.getElementById('searchStatus');
-  st.innerHTML = `⏳ Looking up <b>${esc(k)}</b> (flip token or address) … first lookup can take a few seconds.`;
+  st.innerHTML = `⏳ Looking up flip <b>${esc(k)}</b> … first lookup can take a few seconds.`;
   try{
     const res = await fetch('/api/audit/'+encodeURIComponent(k));
     const data = await res.json();
     if(!res.ok || data.error){
       if(res.status===404){
-        st.innerHTML = `🚫 <b>No flip found for “${esc(k)}”.</b> Not in any Opendoor flip record — double-check the flip token (or try the property address).`;
+        st.innerHTML = `🚫 <b>No flip found for “${esc(k)}”.</b> Not in any Opendoor flip record — double-check the flip token.`;
       } else {
         st.innerHTML = `⚠ ${esc(data.error || ('Error loading '+k))}`;
       }
       return;
     }
     data.address = data.address || '';
-    const key = data.flip_token || k;   // key off the RESOLVED flip token (input may be an address)
+    const key = data.flip_token || k;   // key off the RESOLVED flip token (property's newest flip)
     DATA[key]=data; CURRENT_KEY=key; CURRENT=data; KW='';
     document.getElementById('kwInput').value='';
     renderAll();
+    const entered=k.trim().toUpperCase();
+    if(entered && key.toUpperCase()!==entered){
+      st.innerHTML = `↪ Rolled forward to this property's most recent flip <b>${esc(key)}</b> (you entered ${esc(entered)}).`;
+    } else { st.innerHTML=''; }
   }catch(e){ st.innerHTML = `⚠ ${esc(String(e))}`; }
 }
 function quickKw(v){ document.getElementById('kwInput').value=v; runSearch(); }
@@ -489,19 +502,38 @@ function renderMisstatements(){
 function renderKeyFacts(){
   const c=CURRENT, e=c.experience||{}, ec=c.economics||{};
   const money=v=>(v==null||v==='')?'—':('$'+Number(v).toLocaleString());
+  const isCNML = (e.product||'').toLowerCase().includes('cnml')
+    || (e.product||'').toLowerCase().includes('more later')
+    || (e.cnml && e.cnml!=='—');
+  // fee shown as DOLLARS · PERCENT (the amount we actually charge)
+  const feeSvc = (e.fee && e.fee!=='—')
+    ? ((e.fee_usd!=null ? (money(e.fee_usd)+' · ') : '') + e.fee + (e.fee_name?` <span class="muted-inline">(${e.fee_name})</span>`:''))
+    : '—';
+  const headlineLabel = (isCNML && ec.cnml_headline!=null) ? 'Headline price (resale est.)' : 'Headline price (current)';
+  const headlineVal   = (isCNML && ec.cnml_headline!=null) ? money(ec.cnml_headline) : money(ec.offer_price);
   const rows=[
     ['Product', (e.product||'—') + (e.cnml&&e.cnml!=='—'?(' · CNML '+e.cnml):'')],
+    [headlineLabel, headlineVal],
+    ['Our fee — '+(isCNML?'program':'service'), feeSvc],
+  ];
+  if(e.fee_total_usd!=null && e.fee_total_usd!==e.fee_usd)
+    rows.push(['Our fee — total charged', money(e.fee_total_usd)]);
+  if(isCNML){
+    rows.push(['CNML — CP1 (cash at closing)', ec.cp1!=null?money(ec.cp1):'— (source pending)']);
+    rows.push(['CNML — CP2 (upside after resale)', ec.cp2!=null?money(ec.cp2):'— (source pending)']);
+    if(ec.cp_total!=null) rows.push(['CNML — total projected proceeds', money(ec.cp_total)]);
+    if(ec.adv_rate_pct!=null) rows.push(['CNML — advance rate', ec.adv_rate_pct+'%']);
+  }
+  rows.push(
     ['Purchase price', money(ec.purchase_price)],
-    ['Offer price (headline)', money(ec.offer_price)],
     ['Est. net proceeds', money(ec.net_price)],
-    ['List price', money(ec.list_price)],
-    ['Offer service fee', e.fee||'—'],
     ['AI-scoped repairs', money(ec.ai_repairs)],
     ['Diligence repair result', money(ec.dv_repairs)],
+    ['List price', money(ec.list_price)],
     ['Channel', e.channel||'—'],
     ['HSA lead', e.hsa||'—'],
     ['Status', e.state||'—'],
-  ];
+  );
   document.getElementById('c-keyfacts').innerHTML =
     rows.map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join('');
 }
@@ -557,6 +589,36 @@ function renderStats(){
     `<div class="stat ${s.t}"><div class="sic">${s.ic}</div><div><div class="n">${s.v}</div><div class="l">${s.l}</div></div></div>`).join('');
 }
 
+// per-event body: collapse long call transcripts (>5 sentences) into a preview + toggle
+function evBody(ev, id, forceFull){
+  const meta = ev.meta?`<div class="meta">${esc(ev.meta)}</div>`:'';
+  const subj = ev.subj?`<div style="font-weight:700;margin-bottom:3px">${hl(ev.subj)}</div>`:'';
+  const raw = ev.body||'';
+  const sents = raw.split(/(?<=[.!?])\s+/).filter(s=>s.trim());
+  if(forceFull || sents.length<=5){
+    return `<div class="body">${meta}${subj}${hl(raw)}</div>`;
+  }
+  const preview = sents.slice(0,5).join(' ');
+  return `<div class="body">${meta}${subj}`
+    + `<span class="bprev" id="p_${id}">${hl(preview)} …</span>`
+    + `<span class="bfull" id="f_${id}" style="display:none">${hl(raw)}</span>`
+    + `<button class="body-toggle" id="t_${id}" onclick="toggleBody('${id}')">▾ Show full transcript (${sents.length} sentences)</button>`
+    + `</div>`;
+}
+function toggleBody(id){
+  const p=document.getElementById('p_'+id), f=document.getElementById('f_'+id), t=document.getElementById('t_'+id);
+  const open = f.style.display==='none';
+  f.style.display = open?'block':'none';
+  p.style.display = open?'none':'inline';
+  t.textContent = open?'▴ Collapse transcript':'▾ Show full transcript';
+}
+let TL_COLLAPSED=false;
+function toggleTimeline(){
+  TL_COLLAPSED=!TL_COLLAPSED;
+  document.getElementById('timeline').style.display = TL_COLLAPSED?'none':'block';
+  document.getElementById('tlCaret').textContent = TL_COLLAPSED?'▸':'▾';
+}
+
 let TL_EXPANDED=false;
 function renderTimeline(){
   const c=CURRENT, tl=document.getElementById('timeline');
@@ -570,7 +632,7 @@ function renderTimeline(){
     hiddenOlder=evs.length-within.length;
     evs=within;
   }
-  tl.innerHTML = evs.map(ev=>{
+  tl.innerHTML = evs.map((ev,i)=>{
     const isMsg = SEARCHABLE.includes(ev.type);
     const hit = KW && isMsg && matches(ev);
     const dim = KW && isMsg && !matches(ev);
@@ -582,7 +644,7 @@ function renderTimeline(){
     return `<div class="ev ${ev.type} ${hit?'hit':''} ${dim?'dim':''}">
       <div class="dot"></div>
       <div class="row"><span class="tag">${tag}</span><span class="who">${hl(ev.who)}</span>${dir}${badge}<span class="when">${ev.when}</span></div>
-      <div class="body">${meta}${subj}${hl(ev.body)}</div>
+      ${evBody(ev, 'tl'+i, hit)}
     </div>`;
   }).join('')
     + (hiddenOlder>0?`<button class="loadmore" onclick="TL_EXPANDED=true;renderTimeline()">↓ Load ${hiddenOlder} older event${hiddenOlder>1?'s':''} (beyond 45 days)</button>`:'')

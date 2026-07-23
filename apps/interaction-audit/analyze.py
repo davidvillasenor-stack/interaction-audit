@@ -205,6 +205,9 @@ def analyze(raw):
         channel = f"{channel} ({exp['partner']})"
     of = raw.get("offer_fee") or {}
     fee_disp = f"{of['service_pct']:g}%" if of.get("service_pct") is not None else "—"
+    fee_usd = of.get("service_usd")            # $ we charge for the service fee (fee% × price)
+    fee_total_usd = of.get("total_usd")        # $ across all fees on the offer
+    fee_name = of.get("service_name") or "Opendoor Experience"
     state = (exp.get("flip_state") or "").replace("_", " ").title() or "—"
     good = any(k in (exp.get("flip_state") or "") for k in ("closed", "released", "acq_close"))
     withdrawn = "withdraw" in (exp.get("flip_state") or "")
@@ -325,7 +328,8 @@ def analyze(raw):
         "economics": raw.get("economics") or {},
         "experience": {"product": product, "cnml": cnml, "arm": exp.get("arm") or "—",
                        "channel": channel, "hsa": hsa, "state": state, "stateClass": state_cls,
-                       "fee": fee_disp},
+                       "fee": fee_disp, "fee_usd": fee_usd, "fee_total_usd": fee_total_usd,
+                       "fee_name": fee_name},
         "slack": [],  # live Slack wiring optional; empty for now
         "summary": summary,
         "gaps": gaps,

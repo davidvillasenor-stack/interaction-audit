@@ -125,12 +125,19 @@ limit 1
 """
 
 EMAIL = """
-with u as (select ID from FIVETRAN.ZENDESK."USER" where lower(EMAIL) in ({emails})),
+with ids as (
+  -- Zendesk stores ALL of a user's emails in USER_IDENTITY (the primary USER.email often
+  -- differs from the address a seller emails from). custom_customer_email is empty in the
+  -- feed, so match by identity → requester. (⚠️ FIVETRAN.ZENDESK sync is stale to ~Feb 2026;
+  -- recent flips will have identities but no tickets until the sync is refreshed.)
+  select distinct user_id from FIVETRAN.ZENDESK.USER_IDENTITY
+  where type='email' and lower(value) in ({emails})
+),
 t as (
   select ID, SUBJECT, REQUESTER_ID
   from FIVETRAN.ZENDESK.TICKET
-  where lower(CUSTOM_CUSTOMER_EMAIL) in ({emails})
-     or REQUESTER_ID in (select ID from u)
+  where REQUESTER_ID in (select user_id from ids)
+     or lower(CUSTOM_CUSTOMER_EMAIL) in ({emails})
 )
 select c.ID id, c.CREATED created_at, c.PLAIN_BODY body, c.PUBLIC is_public,
        c.USER_ID author_id, t.SUBJECT subject, t.REQUESTER_ID requester_id,
@@ -170,6 +177,21 @@ order by id desc
 limit 1
 """
 
+# CNML / Cash+ ("Sell With Us"): definitive product flag + CP1/CP2 economics.
+# CASH_PLUS_INDICATOR is the contract-level truth; SWU_L1_FUNNEL holds the CP1 (cash at
+# closing) / CP2 (after-resale upside) split, keyed by flip_token (one row per offer).
+CASHPLUS = "select cash_plus_indicator ind from DWH.CONSUMER.ACQUISITION_CONTRACTS_L1 where flip_token=%(f)s limit 1"
+SWU = """
+select cp1_amt, cp1_amt_before_dv,
+       projected_resale_seller_upside_proceeds upside, cptotal_amt,
+       headline_price, adv_rate_pct, program_fee_pct, od_program_fee,
+       swu_converted, acquistion_channel, partner_name
+from DWH.CONSUMER.SWU_L1_FUNNEL
+where flip_token=%(f)s
+order by (case when state='accepted' then 0 else 1 end), offer_sent_date desc nulls last
+limit 1
+"""
+
 def _sql_list(vals):
     return ",".join("'" + str(v).replace("'", "''") + "'" for v in vals if v)
 
@@ -202,22 +224,52 @@ order by FLIP_CREATED_AT desc nulls last
 limit 1
 """
 
+# Given any flip token, find the property it belongs to (address_token) and return the
+# property's CURRENT REAL flip. A property often has several parallel flips with identical
+# offer timestamps (simultaneous offer/product variants) — only one actually progresses.
+# So "most recent" = the flip that advanced furthest: prefer a completed purchase agreement
+# (most recent), then non-dead flips (not expired/denied/withdrawn), then offer recency.
+# (David's call: audit always follows the property's real current flip.)
+NEWEST_FOR_PROPERTY = """
+select fd.flip_token
+from DWH.DATA_MART_FRONTEND.FLIP_DETAILS fd
+where fd.address_token = (
+    select address_token from DWH.DATA_MART_FRONTEND.FLIP_DETAILS
+    where flip_token = %(f)s and address_token is not null limit 1
+)
+order by
+  (case when fd.purchase_agreement_completed_at is not null then 0 else 1 end),
+  fd.purchase_agreement_completed_at desc nulls last,
+  (case when fd.flip_state ilike '%%withdraw%%' or fd.flip_state ilike '%%expired%%'
+             or fd.flip_state ilike '%%denied%%' then 1 else 0 end),
+  coalesce(fd.last_offer_sent_at, fd.first_offer_sent_at) desc nulls last
+limit 1
+"""
+
+def newest_flip_for_property(flip: str) -> str | None:
+    """Resolve a flip token to the newest flip token for the same property (address_token)."""
+    r = query(NEWEST_FOR_PROPERTY, {"f": flip})
+    return r[0]["FLIP_TOKEN"] if r else None
+
 def resolve_flip(q: str) -> str | None:
-    """Accept a flip token OR a (partial) property address; return a flip_token."""
+    """Accept a flip token (primary) or a property address (fallback); always return the
+    MOST RECENT flip token for that property."""
     q = (q or "").strip()
     if not q:
         return None
-    # looks like a flip token (alphanumeric, no spaces) → confirm it exists in EITHER the
-    # analytics marts (ax_leads) OR the operational flips table (web.flips, catches early-stage flips)
+    # looks like a flip token → confirm it exists, then roll forward to the property's newest flip
     if re.fullmatch(r"[A-Za-z0-9]{8,20}", q):
         u = q.upper()
-        if query("select flip_token from DWH.dw.ax_leads where flip_token=%(q)s limit 1", {"q": u}):
-            return u
-        if query("select token from DWH.web.flips where token=%(q)s limit 1", {"q": u}):
-            return u
-    # otherwise treat as an address → newest matching flip
+        exists = (query("select flip_token from DWH.dw.ax_leads where flip_token=%(q)s limit 1", {"q": u})
+                  or query("select token from DWH.web.flips where token=%(q)s limit 1", {"q": u}))
+        if exists:
+            return newest_flip_for_property(u) or u
+    # otherwise treat as an address → newest matching flip → then property's newest flip
     r = query(ADDR_LOOKUP, {"q": f"%{q}%"})
-    return r[0]["FLIP_TOKEN"] if r else None
+    if r:
+        tok = r[0]["FLIP_TOKEN"]
+        return newest_flip_for_property(tok) or tok
+    return None
 
 def pull_flip(flip: str) -> dict:
     r = query(RESOLVE, {"flip": flip})
@@ -267,10 +319,19 @@ def pull_flip(flip: str) -> dict:
             v = fr.get(f"FEE{i}_PERCENTAGE")
             if v is not None:
                 total += float(v)
+        price_for_fee = None
+        try:
+            price_for_fee = float(fr.get("RECORDED_PRICE_CENTS")) / 100
+        except (TypeError, ValueError):
+            price_for_fee = None
+        svc_frac = fr.get("FEE1_PERCENTAGE")
         offer_fee = {
             "service_name": fr.get("FEE1_NAME"),
-            "service_pct": _pct(fr.get("FEE1_PERCENTAGE")),
+            "service_pct": _pct(svc_frac),
             "total_pct": round(total * 100, 2),
+            # dollar amounts we actually charge (fee % applied to the headline/recorded price)
+            "service_usd": round(price_for_fee * float(svc_frac)) if (price_for_fee and svc_frac is not None) else None,
+            "total_usd": round(price_for_fee * total) if price_for_fee else None,
             "n_fees": fr.get("NUMBER_OF_FEES"),
         }
     def _usd(cents):
@@ -299,6 +360,34 @@ def pull_flip(flip: str) -> dict:
         "list_price": _usd(fr.get("EXTERNAL_LIST_PRICE_CENTS")) if fr else None,
     }
 
+    # ── CNML / Cash+ detection + CP1/CP2 (overrides product + fee when it's a Cash+ deal) ──
+    product = None
+    try:
+        cpr = query(CASHPLUS, {"f": flip})
+        is_cnml = bool(cpr) and str(cpr[0].get("IND")).lower() == "yes"
+    except Exception:  # noqa: BLE001
+        is_cnml = False
+    swu = {}
+    if is_cnml:
+        try:
+            sr = query(SWU, {"f": flip})
+            swu = sr[0] if sr else {}
+        except Exception:  # noqa: BLE001
+            swu = {}
+        product = "Cash+"
+        economics["cp1"] = _rnd(swu.get("CP1_AMT"))                                  # cash at closing
+        economics["cp2"] = _rnd(swu.get("UPSIDE"))                                   # after-resale upside ("more later")
+        economics["cp_total"] = _rnd(swu.get("CPTOTAL_AMT"))                         # projected total proceeds
+        economics["cnml_headline"] = _rnd(swu.get("HEADLINE_PRICE"))                 # resale headline (not the cash number)
+        economics["adv_rate_pct"] = round(float(swu["ADV_RATE_PCT"]) * 100, 1) if swu.get("ADV_RATE_PCT") is not None else None
+        # Cash+ customer-facing fee = program fee (not the Opendoor Experience %)
+        pf, pfp = swu.get("OD_PROGRAM_FEE"), swu.get("PROGRAM_FEE_PCT")
+        if pf is not None:
+            offer_fee = {"service_name": "Cash+ Program Fee",
+                         "service_pct": round(float(pfp) * 100, 2) if pfp is not None else None,
+                         "service_usd": abs(round(float(pf))), "total_usd": abs(round(float(pf))),
+                         "total_pct": round(float(pfp) * 100, 2) if pfp is not None else None, "n_fees": 1}
+
     # ── email (Zendesk via FIVETRAN) by customer email ──
     emails_rows = []
     cust_email = row.get("CUST_EMAIL")
@@ -326,7 +415,7 @@ def pull_flip(flip: str) -> dict:
         "address": fd.get("ADDRESS_FULL"),  # shown (needed for Slack-by-address search)
         "market": fd.get("MARKET_NAME") or row.get("MARKET_NAME"),
         "experience": {
-            "product": None,  # not on FLIP_DETAILS; derived in analyze (default Cash / ALO)
+            "product": product,  # "Cash+" when CNML detected; else None → analyze defaults Cash/ALO
             "is_alo": None,
             "channel": fd.get("LISTING_OFFER_CHANNEL"),
             "partner": None,
