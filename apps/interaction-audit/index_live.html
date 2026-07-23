@@ -254,11 +254,42 @@
   .tl-head{cursor:pointer; user-select:none}
   .tl-head:hover{color:var(--accent)}
   .caret{display:inline-block; width:14px; color:var(--accent); font-weight:800}
-  .body-toggle{display:inline-block; margin-top:6px; border:1px solid var(--line); background:var(--accent-soft);
-    color:var(--accent); border-radius:8px; padding:3px 10px; font-size:11.5px; font-weight:700;
-    cursor:pointer; font-family:inherit}
-  .body-toggle:hover{background:#e6e8ff}
-  .bfull{display:block}
+  .tx{margin-top:2px}
+  .tx-toggle{display:inline-flex; align-items:baseline; gap:6px; max-width:100%; text-align:left;
+    border:1px solid var(--line); background:var(--accent-soft); color:var(--accent);
+    border-radius:9px; padding:5px 11px; font-size:12px; font-weight:600; cursor:pointer;
+    font-family:inherit; line-height:1.45}
+  .tx-toggle:hover{background:#e6e8ff}
+  .tx-caret{color:var(--accent); font-weight:800}
+  .tx-teaser{display:inline-block; color:var(--muted); font-weight:500; font-style:italic;
+    max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom}
+  .tx-full{margin-top:8px}
+  .filters2{display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:2px 0 14px}
+  .filters2 .ff{display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.04em; color:var(--muted)}
+  .filters2 input[type=date], .filters2 select{font-family:inherit; font-size:12.5px; font-weight:500;
+    color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:6px 9px; background:#fff;
+    text-transform:none; letter-spacing:0}
+  .filters2 input[type=date]:focus, .filters2 select:focus{outline:none; border-color:var(--accent)}
+  .ff-clear{border:1px solid var(--line); background:var(--warn-soft); color:var(--warn); border-radius:9px;
+    padding:6px 11px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit; align-items:center}
+  .ff-clear:hover{background:#ffe4e9}
+  .opshub-link{display:inline-flex; align-items:center; gap:6px; margin-top:10px; text-decoration:none;
+    font-size:12.5px; font-weight:700; color:var(--accent); background:var(--accent-soft);
+    border:1px solid #d9dcff; border-radius:10px; padding:6px 12px; width:fit-content}
+  .opshub-link:hover{background:#e6e8ff; border-color:var(--accent)}
+  .ekind{font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+    padding:2px 8px; border-radius:6px}
+  .ekind.seller{background:var(--good-soft); color:var(--good)}
+  .ekind.ops{background:var(--amber-soft); color:var(--amber)}
+  .acc-hd{font-size:12.5px; font-weight:700; color:var(--ink); background:var(--accent-soft);
+    border:1px solid #d9dcff; border-radius:10px; padding:8px 12px; margin-bottom:12px}
+  .mis .sev.high{background:var(--warn-soft); color:var(--warn)}
+  .mis .sev.medium{background:var(--amber-soft); color:var(--amber)}
+  .mis .sev.low{background:var(--sky-soft); color:var(--sky)}
+  .verified{margin-top:14px; background:var(--good-soft); border:1px solid #bfe8d4; border-radius:12px; padding:12px 14px}
+  .verified .vhd{font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--good); margin-bottom:8px}
+  .verified .vitem{font-size:12.5px; color:var(--ink); margin:5px 0; line-height:1.5}
   .rca-card pre{white-space:pre-wrap; word-wrap:break-word; font-family:'Inter',sans-serif; font-size:13px; line-height:1.6; color:#1f2637; background:#f7f8fb; border:1px solid var(--line); border-radius:12px; padding:16px; max-height:60vh; overflow:auto}
   .rca-card .copy{margin-top:12px; border:1.5px solid var(--line); background:#fff; color:var(--accent); border-radius:11px; padding:9px 14px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit}
 
@@ -312,6 +343,7 @@
       <div class="name" id="c-name"></div>
       <div class="flip" id="c-flip"></div>
       <div class="flip" id="c-addr" style="margin-top:1px"></div>
+      <a id="opshubLink" class="opshub-link" target="_blank" rel="noopener" style="display:none">🧭 Open property in Ops Hub ↗</a>
       <div class="chips" id="c-chips"></div>
       <button class="rca-btn" id="rcaBtn" onclick="genRCA()">📄 Generate Case Summary &amp; RCA → DM me</button>
     </div>
@@ -329,7 +361,7 @@
       <div id="c-gaps"></div>
     </div>
     <div class="section">
-      <div class="label">🗣️ Misstatements & inaccurate info told to the customer <span class="count" id="mis-count"></span></div>
+      <div class="label">🔎 Accuracy review — what we told the customer vs source of truth <span class="count" id="mis-count"></span></div>
       <div id="c-mis"></div>
     </div>
   </div>
@@ -353,6 +385,12 @@
         <button data-f="email" onclick="setFilter('email')">✉️ Emails</button>
         <button data-f="call" onclick="setFilter('call')">📞 Call transcripts</button>
         <button data-f="task" onclick="setFilter('task')">✅ Tasks</button>
+      </div>
+      <div class="filters2">
+        <label class="ff">From <input type="date" id="dateFrom" onchange="applyCommFilters()"></label>
+        <label class="ff">To <input type="date" id="dateTo" onchange="applyCommFilters()"></label>
+        <label class="ff">Sender <select id="senderFilter" onchange="applyCommFilters()"><option value="">All senders</option></select></label>
+        <button class="ff-clear" id="ffClear" onclick="clearCommFilters()" style="display:none">✕ clear filters</button>
       </div>
       <div id="messages"></div>
     </div>
@@ -414,6 +452,49 @@ const SEARCHABLE = ["text","email","call","task"];   // searchable + counted
 const MSG_ALL = ["text","email","call"];              // what "All" shows
 const CHAN_LABEL = {text:"Text", email:"Email", call:"Call transcript", task:"Task"};
 let CURRENT_KEY=null, CURRENT=null, FILTER="all", KW="";
+let DATE_FROM="", DATE_TO="", SENDER="";
+// Ops Hub deep-link to the property/flip (opshub.apps.opendoor.com/property/<address_token>/flip/<flip_token>).
+function renderOpshubLink(){
+  const a=document.getElementById('opshubLink'); if(!a) return;
+  const at=(CURRENT && CURRENT.address_token)||"";
+  const ft=(CURRENT && CURRENT.flip_token)||CURRENT_KEY||"";
+  if(at && ft){
+    a.href=`https://opshub.apps.opendoor.com/property/${encodeURIComponent(at)}/flip/${encodeURIComponent(ft)}`;
+    a.style.display='inline-flex';
+  } else {
+    a.style.display='none';
+  }
+}
+// Who "sent" a communication: inbound → Customer; outbound call → the rep; else Opendoor.
+function senderOf(ev){
+  const dir=(ev.dir||'').toLowerCase();
+  const inbound = dir.startsWith('inbound') || /customer\s*→/i.test(ev.who||'');
+  if(inbound) return 'Customer';
+  if(ev.type==='call') return (ev.who||'').replace(/\s*·\s*call\s*$/i,'').trim() || 'Opendoor';
+  return 'Opendoor';
+}
+function populateSenders(){
+  const sel=document.getElementById('senderFilter'); if(!sel||!CURRENT) return;
+  const comms=(CURRENT.events||[]).filter(ev=>SEARCHABLE.includes(ev.type));
+  const names=[...new Set(comms.map(senderOf))].sort((a,b)=>
+    a==='Customer'?-1:b==='Customer'?1:a==='Opendoor'?-1:b==='Opendoor'?1:a.localeCompare(b));
+  sel.innerHTML='<option value="">All senders</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  sel.value = names.includes(SENDER)?SENDER:'';
+}
+function applyCommFilters(){
+  DATE_FROM=document.getElementById('dateFrom').value||"";
+  DATE_TO=document.getElementById('dateTo').value||"";
+  SENDER=document.getElementById('senderFilter').value||"";
+  document.getElementById('ffClear').style.display=(DATE_FROM||DATE_TO||SENDER)?'inline-flex':'none';
+  renderMessages();
+}
+function clearCommFilters(){
+  DATE_FROM=DATE_TO=SENDER="";
+  document.getElementById('dateFrom').value=""; document.getElementById('dateTo').value="";
+  document.getElementById('senderFilter').value="";
+  document.getElementById('ffClear').style.display='none';
+  renderMessages();
+}
 
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function hl(s){ s=esc(s); if(!KW) return s; const re=new RegExp('('+KW.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'); return s.replace(re,'<mark>$1</mark>'); }
@@ -457,7 +538,12 @@ function setFilter(f){ FILTER=f; document.querySelectorAll('#filters button').fo
 
 function renderAll(){
   const c=CURRENT;
-  MSG_EXPANDED=false; TL_EXPANDED=false;   // reset the 45-day views on each new flip
+  MSG_LIMIT=30; TL_LIMIT=30;   // reset the 30-entry pagination on each new flip
+  DATE_FROM=DATE_TO=SENDER="";             // reset comm filters for the new flip
+  const _df=document.getElementById('dateFrom'), _dt=document.getElementById('dateTo'), _fc=document.getElementById('ffClear');
+  if(_df) _df.value=""; if(_dt) _dt.value=""; if(_fc) _fc.style.display='none';
+  populateSenders();
+  renderOpshubLink();
   renderKeyFacts();
   document.getElementById('c-name').textContent=c.name;
   document.getElementById('c-flip').textContent="flip_token: "+CURRENT_KEY;
@@ -484,19 +570,37 @@ function renderFacts(){
 }
 
 function renderMisstatements(){
-  const c=CURRENT, list=c.misstatements||[];
-  document.getElementById('mis-count').textContent=list.length;
-  document.getElementById('c-mis').innerHTML = list.length
-    ? list.map(m=>{
-        const f = m.factRef ? FACTS_BY_ID[m.factRef] : null;
+  const c=CURRENT, box=document.getElementById('c-mis');
+  const acc=c.accuracy;                      // grounded on-demand review, or null if not yet run
+  const sevRank={high:0,medium:1,low:2};
+  if(acc && Array.isArray(acc.findings)){
+    const F=acc.findings.slice().sort((a,b)=>(sevRank[a.severity]??9)-(sevRank[b.severity]??9));
+    const va=Array.isArray(acc.verified_accurate)?acc.verified_accurate:[];
+    const vHtml = va.length
+      ? `<div class="verified"><div class="vhd">✓ Verified accurate (${va.length})</div>`
+        + va.map(v=>`<div class="vitem">✓ ${hl(v)}</div>`).join('') + `</div>`
+      : '';
+    document.getElementById('mis-count').textContent=F.length;
+    if(!F.length){
+      box.innerHTML=`<div class="gap ok"><div class="ic">✅</div><div class="txt">Reviewed against ${esc(acc.source||'HSA Hub')} — no inaccuracies found. <span class="muted-inline">(grounded review ${esc(acc.reviewed_at||'')})</span></div></div>`+vHtml;
+      return;
+    }
+    box.innerHTML = `<div class="acc-hd">🔎 Grounded review — <b>${F.length}</b> flag${F.length>1?'s':''} · checked vs ${esc(acc.source||'HSA Hub')} <span class="muted-inline">${esc(acc.reviewed_at||'')}</span></div>`
+      + F.map(m=>{
+        const sl = m.severity==='high'?'high impact':m.severity==='medium'?'review':'coaching';
         return `<div class="mis">
-        <div class="mhd"><span class="mwho">${hl(m.who)}</span><span class="mwhen">${m.when}</span><span class="sev ${m.sev}">${m.sev==='high'?'high impact':'review'}</span></div>
-        <div class="said">${hl(m.said)}</div>
-        <div class="line bad"><span class="k">⚠ Inaccurate: </span>${hl(m.issue)}</div>
-        <div class="line good"><span class="k">✓ Correct: </span>${hl(m.correct)}</div>
-        ${f?`<div class="line src"><span class="k">📌 Checked against: </span>${hl(f.fact)}<span class="factcat">${f.cat}</span></div>`:''}
-      </div>`;}).join('')
-    : `<div class="gap ok"><div class="ic">✅</div><div class="txt">No misstatements or inaccurate product info detected in this customer's calls, texts, or emails.</div></div>`;
+        <div class="mhd"><span class="mwho">${hl(m.who||'')}</span><span class="mwhen">${m.when||''}</span><span class="sev ${m.severity||'low'}">${sl}</span>${m.category?`<span class="factcat">${esc(m.category)}</span>`:''}</div>
+        <div class="said">${hl(m.statement||'')}</div>
+        ${m.verdict?`<div class="line" style="color:var(--muted);font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.03em">Verdict: ${esc(m.verdict)}</div>`:''}
+        <div class="line good"><span class="k">✓ Source of truth: </span>${hl(m.correct||'')}</div>
+        ${m.source?`<div class="line src"><span class="k">📌 </span>${esc(m.source)}</div>`:''}
+      </div>`;}).join('') + vHtml;
+    return;
+  }
+  // No grounded review yet → be honest, do NOT imply clean.
+  const weak=(c.misstatements||[]).length;
+  document.getElementById('mis-count').textContent='—';
+  box.innerHTML=`<div class="gap"><div class="ic">🔎</div><div class="txt"><b>Not automatically verified.</b> This flip hasn't had a grounded accuracy review yet — statements have not been checked against HSA Hub. Run the on-demand review to surface any inaccuracies.${weak?` <span class="muted-inline">(${weak} weak keyword hit${weak>1?'s':''} only — not a review)</span>`:''}</div></div>`;
 }
 
 function renderKeyFacts(){
@@ -547,7 +651,8 @@ function renderMetrics(){
     {n:waitDays.toFixed(1)+"d", l:"Total wait on us", cls:waitDays?"warnv":"okv"},
     {n:c.gaps.length, l:"Misses / gaps", cls:c.gaps.length?"warnv":"okv"},
     {n:longest?longest.toFixed(1)+"d":"—", l:"Longest single gap", cls:longest>=6?"warnv":""},
-    {n:(c.misstatements||[]).length, l:"Accuracy flags", cls:(c.misstatements||[]).length?"warnv":"okv"},
+    (()=>{const a=(c.accuracy&&c.accuracy.findings)?c.accuracy.findings.length:null;
+      return {n:a==null?'—':a, l:"Accuracy flags", cls:a?"warnv":(a===0?"okv":"")};})(),
     {n:chans+"/3", l:"Channels used", cls:""},
     {n:recaps, l:"Slack recaps", cls:recaps?"":"okv"}
   ];
@@ -589,28 +694,45 @@ function renderStats(){
     `<div class="stat ${s.t}"><div class="sic">${s.ic}</div><div><div class="n">${s.v}</div><div class="l">${s.l}</div></div></div>`).join('');
 }
 
-// per-event body: collapse long call transcripts (>5 sentences) into a preview + toggle
-function evBody(ev, id, forceFull){
-  const meta = ev.meta?`<div class="meta">${esc(ev.meta)}</div>`:'';
-  const subj = ev.subj?`<div style="font-weight:700;margin-bottom:3px">${hl(ev.subj)}</div>`:'';
+// Which event bodies collapse: ANY call with a real transcript; texts/emails when >2 lines.
+function isCollapsible(ev){
   const raw = ev.body||'';
-  const sents = raw.split(/(?<=[.!?])\s+/).filter(s=>s.trim());
-  if(forceFull || sents.length<=5){
-    return `<div class="body">${meta}${subj}${hl(raw)}</div>`;
+  if(!raw) return false;
+  if(ev.type==='call') return !/^\(?no transcript/i.test(raw.trim());
+  const lines = (raw.match(/\n/g)||[]).length + 1;   // texts/emails: collapse past ~2 lines
+  return lines > 2 || raw.length > 160;
+}
+// Collapsed-by-default widget: a compact one-line toggle (caret + count + short teaser) that
+// opens/closes the full body. Keeps the timeline & transcript panel from being walls of text.
+function collapsedBody(ev, id){
+  const raw = (ev.body||'');
+  let label;
+  if(ev.type==='call'){
+    const m = (ev.dir||'').match(/·\s*(.+)$/);      // ev.dir e.g. "Outbound · 5m"
+    const dur = m ? m[1].trim() : '';
+    label = `📞 Phone call${dur ? (' · ' + dur) : ''}`;
+  } else {
+    label = `Show full ${ev.type==='email' ? 'email' : 'message'}`;
   }
-  const preview = sents.slice(0,5).join(' ');
-  return `<div class="body">${meta}${subj}`
-    + `<span class="bprev" id="p_${id}">${hl(preview)} …</span>`
-    + `<span class="bfull" id="f_${id}" style="display:none">${hl(raw)}</span>`
-    + `<button class="body-toggle" id="t_${id}" onclick="toggleBody('${id}')">▾ Show full transcript (${sents.length} sentences)</button>`
+  return `<div id="tx_${id}" class="tx">`
+    + `<button class="tx-toggle" onclick="toggleBody('${id}')">`
+    +   `<span class="tx-caret" id="cr_${id}">▸</span> ${label}`
+    + `</button>`
+    + `<div class="tx-full" id="f_${id}" style="display:none">${hl(raw)}</div>`
     + `</div>`;
 }
+function bodyInner(ev, id, forceFull){
+  const meta = ev.meta?`<div class="meta">${esc(ev.meta)}</div>`:'';
+  const subj = ev.subj?`<div style="font-weight:700;margin-bottom:3px">${hl(ev.subj)}</div>`:'';
+  const inner = (isCollapsible(ev) && !forceFull) ? collapsedBody(ev, id) : hl(ev.body||'');
+  return meta + subj + inner;
+}
+function evBody(ev, id, forceFull){ return `<div class="body">${bodyInner(ev, id, forceFull)}</div>`; }
 function toggleBody(id){
-  const p=document.getElementById('p_'+id), f=document.getElementById('f_'+id), t=document.getElementById('t_'+id);
+  const f=document.getElementById('f_'+id); if(!f) return;
   const open = f.style.display==='none';
   f.style.display = open?'block':'none';
-  p.style.display = open?'none':'inline';
-  t.textContent = open?'▴ Collapse transcript':'▾ Show full transcript';
+  const cr=document.getElementById('cr_'+id); if(cr) cr.textContent = open?'▾':'▸';
 }
 let TL_COLLAPSED=false;
 function toggleTimeline(){
@@ -619,19 +741,14 @@ function toggleTimeline(){
   document.getElementById('tlCaret').textContent = TL_COLLAPSED?'▸':'▾';
 }
 
-let TL_EXPANDED=false;
+let TL_LIMIT=30;   // never render more than this at once; "+30" expander below
 function renderTimeline(){
   const c=CURRENT, tl=document.getElementById('timeline');
-  let evs = c.events.filter(ev=>ev.type!=='task');   // tasks excluded from the transaction timeline
-  evs.sort((a,b)=>(b.iso||'').localeCompare(a.iso||''));   // most recent → oldest
-  document.getElementById('tl-count').textContent=evs.length;
-  let hiddenOlder=0;
-  if(!KW && !TL_EXPANDED && evs.length && evs[0].iso){
-    const cutoff=new Date(new Date(evs[0].iso).getTime()-45*864e5);
-    const within=evs.filter(ev=>ev.iso && new Date(ev.iso)>=cutoff);
-    hiddenOlder=evs.length-within.length;
-    evs=within;
-  }
+  let all = c.events.filter(ev=>ev.type!=='task');   // tasks excluded from the transaction timeline
+  all.sort((a,b)=>(b.iso||'').localeCompare(a.iso||''));   // most recent → oldest
+  document.getElementById('tl-count').textContent=all.length;
+  const evs = all.slice(0, TL_LIMIT);
+  const remaining = all.length - evs.length;
   tl.innerHTML = evs.map((ev,i)=>{
     const isMsg = SEARCHABLE.includes(ev.type);
     const hit = KW && isMsg && matches(ev);
@@ -639,19 +756,18 @@ function renderTimeline(){
     const tag = ev.tag || (ev.type==='call'?'Call':ev.type==='text'?'Text':ev.type==='email'?'Email':ev.type==='task'?'Task':ev.type);
     const dir = ev.dir?`<span class="dir">${ev.dir}</span>`:'';
     const badge = ev.auto===true?'<span class="badge auto">automated</span>':(ev.auto===false?'<span class="badge human">human</span>':'');
-    const meta = ev.meta?`<div class="meta">${esc(ev.meta)}</div>`:'';
-    const subj = ev.subj?`<div style="font-weight:700;margin-bottom:3px">${hl(ev.subj)}</div>`:'';
+    const ekb = (ev.type==='email'&&ev.ekind)?`<span class="ekind ${ev.ekind==='ops'?'ops':'seller'}">${ev.ekind==='ops'?'internal / ops':'seller email'}</span>`:'';
     return `<div class="ev ${ev.type} ${hit?'hit':''} ${dim?'dim':''}">
       <div class="dot"></div>
-      <div class="row"><span class="tag">${tag}</span><span class="who">${hl(ev.who)}</span>${dir}${badge}<span class="when">${ev.when}</span></div>
+      <div class="row"><span class="tag">${tag}</span><span class="who">${hl(ev.who)}</span>${dir}${badge}${ekb}<span class="when">${ev.when}</span></div>
       ${evBody(ev, 'tl'+i, hit)}
     </div>`;
   }).join('')
-    + (hiddenOlder>0?`<button class="loadmore" onclick="TL_EXPANDED=true;renderTimeline()">↓ Load ${hiddenOlder} older event${hiddenOlder>1?'s':''} (beyond 45 days)</button>`:'')
-    + ((TL_EXPANDED&&!KW)?`<button class="loadmore" onclick="TL_EXPANDED=false;renderTimeline()">↑ Show last 45 days only</button>`:'');
+    + (remaining>0?`<button class="loadmore" onclick="TL_LIMIT+=30;renderTimeline()">↓ Show 30 more (${remaining} older)</button>`:'')
+    + (TL_LIMIT>30?`<button class="loadmore" onclick="TL_LIMIT=30;renderTimeline()">↑ Collapse to 30</button>`:'');
 }
 
-let MSG_EXPANDED=false;
+let MSG_LIMIT=30;   // never render more than this at once; "+30" expander below
 function renderMessages(){
   const c=CURRENT, box=document.getElementById('messages');
   let msgs = c.events.filter(ev=>SEARCHABLE.includes(ev.type));
@@ -659,31 +775,31 @@ function renderMessages(){
   msgs.sort((a,b)=>(b.iso||'').localeCompare(a.iso||''));
   document.getElementById('msg-count').textContent = c.events.filter(ev=>MSG_ALL.includes(ev.type)).length;
   let shown = msgs.filter(ev=>(FILTER==='all' ? MSG_ALL.includes(ev.type) : ev.type===FILTER));
-  // default: last 45 days only (unless searching or expanded); older behind a Load button
-  let hiddenOlder=0;
-  if(!KW && !MSG_EXPANDED && shown.length && shown[0].iso){
-    const cutoff=new Date(new Date(shown[0].iso).getTime()-45*864e5);
-    const within=shown.filter(ev=>ev.iso && new Date(ev.iso)>=cutoff);
-    hiddenOlder=shown.length-within.length;
-    shown=within;
-  }
-  const rows = shown.map(ev=>{
+  // date-range + sender filters
+  if(DATE_FROM) shown = shown.filter(ev=>ev.iso && ev.iso.slice(0,10) >= DATE_FROM);
+  if(DATE_TO)   shown = shown.filter(ev=>ev.iso && ev.iso.slice(0,10) <= DATE_TO);
+  if(SENDER)    shown = shown.filter(ev=>senderOf(ev) === SENDER);
+  // never render more than MSG_LIMIT (30) at once; "+30" expander below
+  const paged = shown.slice(0, MSG_LIMIT);
+  const remaining = shown.length - paged.length;
+  const rows = paged.map((ev,i)=>{
     const hit=KW&&matches(ev), dim=KW&&!matches(ev);
     const badge = ev.auto===true?'<span class="badge auto">automated</span>':(ev.auto===false?'<span class="badge human">human</span>':'');
     const subj = ev.subj?`<div class="subj">${hl(ev.subj)}</div>`:'';
     const meta = ev.meta?`<div style="font-size:11.5px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">${esc(ev.meta)}</div>`:'';
+    const ekb = (ev.type==='email'&&ev.ekind)?`<span class="ekind ${ev.ekind==='ops'?'ops':'seller'}">${ev.ekind==='ops'?'internal / ops':'seller email'}</span>`:'';
     return `<div class="msg ${ev.type} ${hit?'hit':''} ${dim?'dim':''}">
       <div class="mhead"><span class="chan">${CHAN_LABEL[ev.type]}</span><span class="mwho">${hl(ev.who)}</span>
-        ${ev.dir?`<span class="dir" style="font-size:11px;color:var(--muted);font-weight:600">${ev.dir}</span>`:''}${badge}
+        ${ev.dir?`<span class="dir" style="font-size:11px;color:var(--muted);font-weight:600">${ev.dir}</span>`:''}${badge}${ekb}
         <span class="mwhen">${ev.when}</span></div>
-      ${meta}${subj}<div class="content">${hl(ev.body)}</div>
+      ${meta}${subj}<div class="content">${(isCollapsible(ev)&&!hit)?collapsedBody(ev,'msg'+i):hl(ev.body)}</div>
     </div>`;
   }).join('');
-  const more = hiddenOlder>0
-    ? `<button class="loadmore" onclick="MSG_EXPANDED=true;renderMessages()">↓ Load ${hiddenOlder} older message${hiddenOlder>1?'s':''} (beyond 45 days)</button>`
+  const more = remaining>0
+    ? `<button class="loadmore" onclick="MSG_LIMIT+=30;renderMessages()">↓ Show 30 more (${remaining} more)</button>`
     : '';
-  const collapse = (MSG_EXPANDED && !KW)
-    ? `<button class="loadmore" onclick="MSG_EXPANDED=false;renderMessages()">↑ Show last 45 days only</button>` : '';
+  const collapse = MSG_LIMIT>30
+    ? `<button class="loadmore" onclick="MSG_LIMIT=30;renderMessages()">↑ Collapse to 30</button>` : '';
   box.innerHTML = (rows || `<div class="empty">No ${FILTER==='all'?'messages':FILTER+'s'} for this customer.</div>`) + more + collapse;
 }
 

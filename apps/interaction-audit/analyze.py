@@ -295,7 +295,8 @@ def analyze(raw):
             events.append({"_dt": c["_dt"], "type": "email",
                            "who": "Customer → Opendoor" if c["_dir"] == "in" else "Opendoor → Customer",
                            "when": _fmt(c["_dt"]), "dir": "Inbound" if c["_dir"] == "in" else "Outbound",
-                           "auto": False, "subj": r.get("subject"), "body": r.get("body") or ""})
+                           "auto": False, "subj": r.get("subject"), "ekind": r.get("kind") or "seller",
+                           "body": r.get("body") or ""})
         else:
             events.append({"_dt": c["_dt"], "type": "text",
                            "who": "Customer → Opendoor" if c["_dir"] == "in" else "Opendoor → Customer",
@@ -325,6 +326,7 @@ def analyze(raw):
     return {
         "customer": raw.get("customer", "Customer"),
         "address": raw.get("address") or "",
+        "address_token": raw.get("address_token") or "",
         "economics": raw.get("economics") or {},
         "experience": {"product": product, "cnml": cnml, "arm": exp.get("arm") or "—",
                        "channel": channel, "hsa": hsa, "state": state, "stateClass": state_cls,

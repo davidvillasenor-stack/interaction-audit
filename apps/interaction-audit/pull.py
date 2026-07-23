@@ -20,6 +20,7 @@ import json, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # app dir, for `import zendesk_api`
 from shared.snowflake_client import query  # noqa: E402
 
 OUT = Path(__file__).resolve().parent / "raw"
@@ -174,6 +175,18 @@ ECON = """
 select PRICE_PURCHASE, PRICE_OFFER_NET, OFFERED_REPAIRS_CHARGE_USD, REPAIR_COST_SELLER_CHARGED
 from DWH.dw.ax_offers where address_token = %(at)s
 order by id desc
+limit 1
+"""
+
+# actual PER-DEAL late-checkout daily rate (the rep should quote this, NOT HSA Hub's $318 example)
+LCO = """
+select round(t.cost_per_day_cents/100) per_day, t.number_of_days,
+       round(t.total_cost_cents/100) total, round(t.security_amount_retained_cents/100) deposit,
+       t.late_checkout_date
+from DWH.WEB.TASKS_LATE_CHECKOUTS t
+join DWH.web.offers o on o.id = t.offer_id
+where o.flip_id = %(flip_id)s
+order by t.updated_at desc nulls last
 limit 1
 """
 
@@ -359,6 +372,16 @@ def pull_flip(flip: str) -> dict:
         "dv_repairs": _rnd(axo.get("REPAIR_COST_SELLER_CHARGED")),      # post-diligence charge to seller
         "list_price": _usd(fr.get("EXTERNAL_LIST_PRICE_CENTS")) if fr else None,
     }
+    # this deal's ACTUAL late-checkout daily rate (reconcile rep quotes against this, not HSA Hub's $318)
+    lco_per_day = None
+    if flip_id:
+        try:
+            lcr = query(LCO, {"flip_id": flip_id})
+            if lcr:
+                lco_per_day = _rnd(lcr[0].get("PER_DAY"))
+        except Exception:  # noqa: BLE001
+            lco_per_day = None
+    economics["late_checkout_per_day"] = lco_per_day
 
     # ── CNML / Cash+ detection + CP1/CP2 (overrides product + fee when it's a Cash+ deal) ──
     product = None
@@ -388,31 +411,37 @@ def pull_flip(flip: str) -> dict:
                          "service_usd": abs(round(float(pf))), "total_usd": abs(round(float(pf))),
                          "total_pct": round(float(pfp) * 100, 2) if pfp is not None else None, "n_fees": 1}
 
-    # ── email (Zendesk via FIVETRAN) by customer email ──
-    emails_rows = []
+    # ── email ── LIVE Zendesk API first (current); FIVETRAN mirror only as fallback (stale ~Feb 2026)
     cust_email = row.get("CUST_EMAIL")
-    if cust_email:
-        elist = _sql_list([cust_email.lower()])
-        try:
-            emails_rows = query(EMAIL.format(emails=elist))
-        except Exception:  # noqa: BLE001 — email is additive; never fail the whole audit on it
-            emails_rows = []
     emails = []
-    for e in emails_rows:
-        cust = (e.get("AUTHOR_ID") is not None and e.get("AUTHOR_ID") == e.get("REQUESTER_ID")) \
-            or (e.get("AUTHOR_ROLE") or "").lower() == "end-user"
-        emails.append({
-            "id": e["ID"], "when": iso(e.get("CREATED_AT")),
-            "direction": "inbound" if cust else "outbound",
-            "subject": e.get("SUBJECT") or "(no subject)",
-            "is_public": bool(e.get("IS_PUBLIC")),
-            "body": e.get("BODY"),
-        })
+    try:
+        import zendesk_api  # same-dir module (app dir added to sys.path above)
+        if zendesk_api.enabled():
+            emails = zendesk_api.fetch_emails(customer_email=cust_email, flip_token=flip)
+    except Exception:  # noqa: BLE001 — email is additive; never fail the whole audit on it
+        emails = []
+    if not emails and cust_email:
+        # fallback: stale FIVETRAN mirror (USER_IDENTITY join) — helps only pre-Feb-2026 deals
+        try:
+            emails_rows = query(EMAIL.format(emails=_sql_list([cust_email.lower()])))
+        except Exception:  # noqa: BLE001
+            emails_rows = []
+        for e in emails_rows:
+            cust = (e.get("AUTHOR_ID") is not None and e.get("AUTHOR_ID") == e.get("REQUESTER_ID")) \
+                or (e.get("AUTHOR_ROLE") or "").lower() == "end-user"
+            emails.append({
+                "id": e["ID"], "when": iso(e.get("CREATED_AT")),
+                "direction": "inbound" if cust else "outbound",
+                "subject": e.get("SUBJECT") or "(no subject)",
+                "is_public": bool(e.get("IS_PUBLIC")),
+                "body": e.get("BODY"),
+            })
 
     return {
         "flip_token": flip,
         "customer": red_name(row.get("CUST_NAME")),
         "address": fd.get("ADDRESS_FULL"),  # shown (needed for Slack-by-address search)
+        "address_token": address_token,     # for the Ops Hub property/flip deep-link
         "market": fd.get("MARKET_NAME") or row.get("MARKET_NAME"),
         "experience": {
             "product": product,  # "Cash+" when CNML detected; else None → analyze defaults Cash/ALO

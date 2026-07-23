@@ -27,6 +27,7 @@ pull = _load("pull")
 analyze_mod = _load("analyze")
 slack_search = _load("slack_search")
 rca_mod = _load("rca")
+grounding_mod = _load("grounding")
 
 app = FastAPI(title="Customer Interaction Audit")
 _CACHE: dict[str, dict] = {}
@@ -53,6 +54,13 @@ def _assemble(flip: str) -> dict:
                 result["slack"] = json.loads(sc.read_text())
     except Exception:  # noqa: BLE001
         pass
+    # on-demand accuracy review (grounded): served from accuracy_cache/<flip>.json when present.
+    # The deterministic regex scan (result["misstatements"]) is a weak fallback, NOT an all-clear.
+    try:
+        ac = HERE / "accuracy_cache" / f"{flip}.json"
+        result["accuracy"] = json.loads(ac.read_text()) if ac.exists() else None
+    except Exception:  # noqa: BLE001
+        result["accuracy"] = None
     return result
 
 @app.get("/api/audit/{q:path}")
@@ -94,6 +102,26 @@ def rca(q: str):
         return JSONResponse({"error": f"{type(e).__name__}: {e}", "query": q}, status_code=500)
     return {"flip_token": flip, "delivered": delivery.get("delivered"),
             "via": delivery.get("via"), "error": delivery.get("error"), "rca": text}
+
+@app.get("/api/grounding/{q:path}")
+def grounding(q: str):
+    """Assemble the accuracy grounding pack for a flip (facts + this deal's real numbers + comms
+    to review). Feeds the on-demand accuracy review; also inspectable directly."""
+    q = (q or "").strip()
+    if not q:
+        return JSONResponse({"error": "empty query"}, status_code=400)
+    try:
+        flip = pull.resolve_flip(q)
+        if not flip:
+            return JSONResponse({"error": f"No flip or address match for '{q}'"}, status_code=404)
+        result = _CACHE.get(flip) or _assemble(flip)
+        if result.get("error"):
+            return JSONResponse(result, status_code=404)
+        _CACHE[flip] = result
+        pack = grounding_mod.build_grounding_pack(result)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": f"{type(e).__name__}: {e}", "query": q}, status_code=500)
+    return {"flip_token": flip, "pack": pack, "markdown": grounding_mod.render_markdown(pack)}
 
 @app.get("/healthz")
 def healthz():
