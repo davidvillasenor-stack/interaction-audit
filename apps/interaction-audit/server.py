@@ -29,6 +29,7 @@ slack_search = _load("slack_search")
 rca_mod = _load("rca")
 grounding_mod = _load("grounding")
 auto_checks_mod = _load("auto_checks")
+llm_review_mod = _load("llm_review")
 
 app = FastAPI(title="Customer Interaction Audit")
 _CACHE: dict[str, dict] = {}
@@ -58,14 +59,18 @@ def _assemble(flip: str) -> dict:
     # accuracy review: a hand/LLM on-demand review (accuracy_cache/<flip>.json) WINS when present;
     # otherwise the automatic grounded pass runs on every audit so the card is never blank.
     try:
+        from datetime import date
         ac = HERE / "accuracy_cache" / f"{flip}.json"
         if ac.exists():
-            result["accuracy"] = json.loads(ac.read_text())
+            result["accuracy"] = json.loads(ac.read_text())      # hand/on-demand review wins
         else:
-            from datetime import date
-            auto = auto_checks_mod.run(result)
-            auto["reviewed_at"] = date.today().isoformat()
-            result["accuracy"] = auto
+            acc = None
+            if llm_review_mod.enabled():                          # Gemini full review when a key is set
+                acc = llm_review_mod.run(grounding_mod.build_grounding_pack(result))
+            if acc is None:
+                acc = auto_checks_mod.run(result)                 # deterministic fallback (no key / on error)
+            acc["reviewed_at"] = date.today().isoformat()
+            result["accuracy"] = acc
     except Exception:  # noqa: BLE001
         result["accuracy"] = None
     return result

@@ -16,11 +16,13 @@ customer across the whole transaction, and — critically — **whether we told 
   expand. Lists cap at 30 with a "+30" expander so it never becomes a wall of text.
 - **Where we went dark & who we were waiting on** — response-gap detection with **owner
   attribution** (HSA / Sales Support / TC / Title).
-- **Accuracy review — auto-verified on every audit.** Grounded in **HSA Hub (primary source of
-  truth) + cx-knowledge + the deal's real numbers**, it flags where a rep told the customer
-  something inaccurate — fee %, EMD, late-checkout rate, CNML CP1/CP2 timing, ALO mislabels,
-  unsupported repair-credit claims — each with the source it violated. Never a false "all clear":
-  it shows flags, "verified accurate," or an honest "not yet reviewed."
+- **Accuracy review — auto-verified on every audit by Gemini.** A **Gemini** (gemini-flash-latest)
+  review runs automatically on each audit, grounded in **HSA Hub (primary source of truth) +
+  cx-knowledge + the deal's real numbers**. It flags where a rep told the customer something
+  inaccurate — fee %, EMD, late-checkout rate, CNML CP1/CP2 timing, ALO mislabels, unsupported
+  repair-credit claims, "cleared to close" while approval is pending — each with the source it
+  violated, plus a "✓ verified accurate" list. A deterministic no-key fallback runs if Gemini is
+  unavailable, so the card is never a false "all clear."
 - **Deal economics** — product (Cash / Cash+/CNML), current headline price, **fee in dollars**,
   and for Cash+ the **CP1 (cash at closing) / CP2 (after-resale upside)** split + advance rate.
 - **Search + filters** across every message/transcript — keyword, date range, and by sender.
@@ -53,8 +55,9 @@ seller who asked three times for a repair itemization, never got it, and walked 
 
 ## Tech stack
 
-Python (FastAPI + uvicorn), deterministic analysis + grounded accuracy engine (**no API key
-required**). Snowflake (live, SSO/Okta). Live Zendesk API. Slack (per-flip). Self-contained HTML UI.
+Python (FastAPI + uvicorn). Snowflake (live, SSO/Okta). Live Zendesk API. **Gemini
+(gemini-flash-latest)** powers the grounded accuracy review, with a deterministic fallback that
+needs no key. Slack (per-flip). Self-contained HTML UI.
 
 ## Privacy / safety
 
@@ -79,7 +82,7 @@ Run: `bash ~/batting-cage/apps/interaction-audit/run.sh` → http://localhost:87
 
 ## What's next
 
-- **Full LLM auto-verify** — the auto pass catches clear/quantitative misstatements today; a real
-  Anthropic key or Opendoor Bedrock upgrades it to catch nuanced/paraphrased claims automatically.
+- **Accuracy at scale** — Gemini now auto-reviews every audit; a hosted, org-wide deployment
+  would move this to Opendoor Bedrock/Vertex for managed billing + a golden-set eval harness.
 - **Slack auto-pull** for any flip (Slack user token, `search:read`).
 - **Body-scrubbing** of message bodies → enables a hosted, SSO-gated company-wide deployment.
