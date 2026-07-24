@@ -28,6 +28,7 @@ analyze_mod = _load("analyze")
 slack_search = _load("slack_search")
 rca_mod = _load("rca")
 grounding_mod = _load("grounding")
+auto_checks_mod = _load("auto_checks")
 
 app = FastAPI(title="Customer Interaction Audit")
 _CACHE: dict[str, dict] = {}
@@ -54,11 +55,17 @@ def _assemble(flip: str) -> dict:
                 result["slack"] = json.loads(sc.read_text())
     except Exception:  # noqa: BLE001
         pass
-    # on-demand accuracy review (grounded): served from accuracy_cache/<flip>.json when present.
-    # The deterministic regex scan (result["misstatements"]) is a weak fallback, NOT an all-clear.
+    # accuracy review: a hand/LLM on-demand review (accuracy_cache/<flip>.json) WINS when present;
+    # otherwise the automatic grounded pass runs on every audit so the card is never blank.
     try:
         ac = HERE / "accuracy_cache" / f"{flip}.json"
-        result["accuracy"] = json.loads(ac.read_text()) if ac.exists() else None
+        if ac.exists():
+            result["accuracy"] = json.loads(ac.read_text())
+        else:
+            from datetime import date
+            auto = auto_checks_mod.run(result)
+            auto["reviewed_at"] = date.today().isoformat()
+            result["accuracy"] = auto
     except Exception:  # noqa: BLE001
         result["accuracy"] = None
     return result

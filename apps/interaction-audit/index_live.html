@@ -582,10 +582,15 @@ function renderMisstatements(){
       : '';
     document.getElementById('mis-count').textContent=F.length;
     if(!F.length){
-      box.innerHTML=`<div class="gap ok"><div class="ic">✅</div><div class="txt">Reviewed against ${esc(acc.source||'HSA Hub')} — no inaccuracies found. <span class="muted-inline">(grounded review ${esc(acc.reviewed_at||'')})</span></div></div>`+vHtml;
+      const msg = acc.auto
+        ? `Automatic grounded checks ran — no clear numeric or product-fact misstatements found. <span class="muted-inline">A full comprehension review (nuanced/paraphrased claims) runs on-demand. (${esc(acc.reviewed_at||'')})</span>`
+        : `Reviewed against ${esc(acc.source||'HSA Hub')} — no inaccuracies found. <span class="muted-inline">(grounded review ${esc(acc.reviewed_at||'')})</span>`;
+      box.innerHTML=`<div class="gap ok"><div class="ic">✅</div><div class="txt">${msg}</div></div>`+vHtml;
       return;
     }
-    box.innerHTML = `<div class="acc-hd">🔎 Grounded review — <b>${F.length}</b> flag${F.length>1?'s':''} · checked vs ${esc(acc.source||'HSA Hub')} <span class="muted-inline">${esc(acc.reviewed_at||'')}</span></div>`
+    const _hd = acc.auto ? '⚙️ Automatic grounded checks' : '🔎 Grounded review';
+    const _note = (acc.auto && acc.note) ? `<div class="muted-inline" style="margin-top:5px;font-weight:500;text-transform:none;letter-spacing:0">${esc(acc.note)}</div>` : '';
+    box.innerHTML = `<div class="acc-hd">${_hd} — <b>${F.length}</b> flag${F.length>1?'s':''} · vs ${esc(acc.source||'HSA Hub')} <span class="muted-inline">${esc(acc.reviewed_at||'')}</span>${_note}</div>`
       + F.map(m=>{
         const sl = m.severity==='high'?'high impact':m.severity==='medium'?'review':'coaching';
         return `<div class="mis">
