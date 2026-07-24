@@ -73,7 +73,8 @@ Run: `bash ~/batting-cage/apps/interaction-audit/run.sh` → http://localhost:87
 
 ## Links
 
-- **Public repo (submit this):** https://github.com/davidvillasenor-stack/interaction-audit
+- **🎥 Demo video:** https://www.loom.com/share/2494c6099b744b1d9fb0221a57a845b8
+- **💻 Public repo (submit this):** https://github.com/davidvillasenor-stack/interaction-audit
 - Private org mirror: https://github.com/opendoor-labs/interaction-audit
 
 ## What's next
